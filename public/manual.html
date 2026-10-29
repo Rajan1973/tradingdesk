@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quant Terminal User Manual</title>
+<style>
+:root {
+  --bg: #ffffff; --panel: #f5f6f8; --text: #1b1d23; --muted: #5d6270; --border: #e1e4ea;
+  --accent: #2962ff; --accent-soft: rgba(41, 98, 255, 0.08); --warn: #b35c00; --warn-soft: rgba(255, 152, 0, 0.12);
+  --code: #eef0f4;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131722; --panel: #1b2030; --text: #d9dce3; --muted: #9298a8; --border: #2a3040;
+    --accent: #5b8cff; --accent-soft: rgba(91, 140, 255, 0.12); --warn: #ffb74d; --warn-soft: rgba(255, 183, 77, 0.12);
+    --code: #232a3b;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131722; --panel: #1b2030; --text: #d9dce3; --muted: #9298a8; --border: #2a3040;
+  --accent: #5b8cff; --accent-soft: rgba(91, 140, 255, 0.12); --warn: #ffb74d; --warn-soft: rgba(255, 183, 77, 0.12);
+  --code: #232a3b;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); max-width: 1200px; margin: 0 auto; }
+nav { position: sticky; top: 0; height: 100vh; overflow-y: auto; padding: 24px 16px; border-right: 1px solid var(--border); font-size: 13.5px; }
+nav .brand { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+nav .sub { color: var(--muted); font-size: 12px; margin-bottom: 16px; }
+nav a { display: block; color: var(--muted); text-decoration: none; padding: 3px 8px; border-radius: 4px; }
+nav a:hover { color: var(--text); background: var(--panel); }
+nav .group { margin: 14px 0 4px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+main { padding: 32px 40px 80px; min-width: 0; }
+h1 { font-size: 30px; margin: 0 0 6px; letter-spacing: -0.02em; }
+h2 { font-size: 22px; margin: 48px 0 10px; padding-top: 10px; border-top: 1px solid var(--border); letter-spacing: -0.01em; }
+h3 { font-size: 16px; margin: 24px 0 6px; }
+p, li { max-width: 760px; }
+.lead { color: var(--muted); font-size: 16px; margin-bottom: 24px; }
+code { background: var(--code); padding: 1px 6px; border-radius: 4px; font-size: 13px; font-family: ui-monospace, "SF Mono", Consolas, monospace; }
+pre { background: var(--code); padding: 12px 14px; border-radius: 6px; overflow-x: auto; font-size: 13px; max-width: 760px; }
+pre code { padding: 0; background: none; }
+table { border-collapse: collapse; margin: 10px 0 16px; font-size: 14px; max-width: 860px; width: 100%; }
+th, td { border: 1px solid var(--border); padding: 7px 10px; text-align: left; vertical-align: top; }
+th { background: var(--panel); font-weight: 600; }
+.note, .warn { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 10px 14px; border-radius: 0 6px 6px 0; max-width: 760px; margin: 12px 0; }
+.warn { border-left-color: var(--warn); background: var(--warn-soft); }
+.note b:first-child, .warn b:first-child { display: block; margin-bottom: 2px; }
+kbd { border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 0 6px; font-size: 12.5px; background: var(--panel); font-family: inherit; }
+.tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); vertical-align: 2px; margin-left: 4px; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; max-width: 860px; margin: 14px 0; }
+.card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--panel); font-size: 13.5px; }
+.card b { display: block; margin-bottom: 2px; }
+.card a { color: inherit; text-decoration: none; }
+.card:hover { border-color: var(--accent); }
+.top { position: fixed; right: 18px; bottom: 18px; background: var(--accent); color: #fff; text-decoration: none; border-radius: 20px; padding: 6px 14px; font-size: 13px; }
+a { color: var(--accent); }
+@media (max-width: 860px) {
+  .layout { display: block; }
+  nav { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+  main { padding: 20px 16px 60px; }
+}
+@media print { nav, .top { display: none; } .layout { display: block; } h2 { break-before: page; } }
+</style>
+</head>
+<body>
+<div class="layout">
+<nav>
+  <div class="brand">Quant Terminal</div>
+  <div class="sub">User manual</div>
+  <a href="#new">What's new</a>
+  <a href="#start">Getting started</a>
+  <a href="#tour">A tour of the screen</a>
+  <div class="group">Charts</div>
+  <a href="#symbols">Symbols and markets</a>
+  <a href="#charts">Timeframes, chart types, layouts</a>
+  <a href="#indicators">Indicators</a>
+  <a href="#drawing">Drawing tools</a>
+  <a href="#catalysts">Catalyst markers</a>
+  <div class="group">Side panel</div>
+  <a href="#watchlist">Watchlists</a>
+  <a href="#alerts">Alerts</a>
+  <a href="#calendar">Calendar</a>
+  <a href="#news">News</a>
+  <div class="group">Bottom panel</div>
+  <a href="#screener">Screener</a>
+  <a href="#heatmap">Heatmap</a>
+  <a href="#seasonals">Seasonals</a>
+  <a href="#financials">Financials</a>
+  <a href="#tester">Strategy tester and quant checks</a>
+  <a href="#replay">Bar replay</a>
+  <a href="#paper">Paper trading</a>
+  <a href="#broker">Broker accounts</a>
+  <a href="#orderwindow">Order window</a>
+  <a href="#gtt">GTT orders and trailing stop-loss</a>
+  <a href="#editor">Indicator editor</a>
+  <div class="group">Your setup</div>
+  <a href="#settings">Settings</a>
+  <a href="#data">Your data and backups</a>
+  <a href="#keys">Keyboard shortcuts</a>
+  <a href="#help">Troubleshooting</a>
+</nav>
+
+<main>
+<h1>Quant Terminal user manual</h1>
+<p class="lead">A trading terminal that runs on your own computer, set up for Indian markets: NSE and BSE charts, Indian news, a Nifty 500 screener and heatmap, company financials, your own stock catalysts on the chart, and your Zerodha, Kotak Neo and ICICI Direct accounts (several of each). It also covers crypto, US stocks and forex.</p>
+
+<div class="cards">
+  <div class="card"><a href="#start"><b>Start and stop the app</b>Open it, close it, start it after a restart.</a></div>
+  <div class="card"><a href="#symbols"><b>Open an Indian stock</b>RELIANCE.NS, ^NSEI and other codes.</a></div>
+  <div class="card"><a href="#catalysts"><b>Catalyst markers</b>Your events as coloured dots on the chart.</a></div>
+  <div class="card"><a href="#broker"><b>Connect your broker</b>Holdings, positions and orders.</a></div>
+</div>
+
+<!-- ================================================================ -->
+<h2 id="new">What's new <span class="tag">26 Oct 2026</span></h2>
+<table>
+<tr><th>Area</th><th>What changed</th></tr>
+<tr><td>Volume profile (VPVR)</td><td>Its settings (click the gear next to it in the legend) now have <b>Show on</b>: Right or Left side of the chart, and colour pickers for <b>Up volume</b>, <b>Down volume</b> and the <b>POC line</b>.</td></tr>
+<tr><td>Chart numbers</td><td>Every number inside a chart (price axis, legend, indicator values, pivot labels, drawings) uses the stock's price level: <b>2 decimals</b> below ₹150, <b>1 decimal</b> from ₹150 to ₹1,000, <b>none</b> above ₹1,000.</td></tr>
+<tr><td><a href="#keynav">Arrow keys</a></td><td><kbd>↑</kbd> <kbd>↓</kbd> step through the watchlist, screener or broker list you last clicked and open each stock's chart. On/off in Settings.</td></tr>
+<tr><td><a href="#credits">Chart logo</a></td><td>Every chart now shows your <b>rb</b> logo and "Charting by Rajan" at the bottom left, in place of the TradingView icon.</td></tr>
+<tr><td><a href="#broker">Broker panel tabs</a></td><td>Holdings, orders, positions and GTTs are now separate tabs: <b>Portfolio</b>, <b>Orders</b> (Open and Executed), <b>Positions</b> and <b>GTT orders</b>. Hourly charts that showed "HTTP 422" for some stocks (e.g. INOXINDIA) load again.</td></tr>
+<tr><td><a href="#symsearch">Symbol search</a></td><td>A <b>🇮🇳 India / 🌐 All</b> switch beside the search box. India shows only NSE (.NS) and BSE (.BO) stocks, SME stocks and ETFs, searchable by code or company name.</td></tr>
+<tr><td><a href="#gtt">GTT orders</a></td><td><b>GTT orders kept in Quant Terminal</b>: single trigger, OCO (stop-loss + target) and <b>trailing stop-loss</b>, for every broker account. Nothing goes to the broker until a trigger is hit; the app watches prices every 5 seconds in market hours, places the order, and alerts you.</td></tr>
+<tr><td><a href="#orderwindow">Order window</a></td><td>A new Zerodha-style order window: Buy/Sell switch, NSE and BSE prices, Regular and GTT tabs, Intraday (MIS) or Longterm (CNC), Market / Limit / SL / SL-M, the amount required and your available funds.</td></tr>
+<tr><td><a href="#start">Starting the app</a></td><td><b>Start Quant Terminal.bat</b> / <b>Stop Quant Terminal.bat</b> and a <b>Quant Terminal</b> desktop shortcut, so you can run the app without Claude (23 Oct).</td></tr>
+<tr><td><a href="#broker">Broker accounts</a></td><td>Any number of accounts per broker, and a new broker: <b>ICICI Direct</b> (Breeze API). Zerodha 2, Kotak Neo 2 and ICICI Direct are ready for their keys. <b>Settings → Broker accounts</b> lists every account and its status.</td></tr>
+<tr><td><a href="#broker">Zerodha</a></td><td>Login opens Zerodha's own page in a <b>pop-up</b> that closes itself. Clear messages for login problems (wrong redirect URL, wrong account for the app, wrong secret).</td></tr>
+<tr><td><a href="#broker">Kotak Neo</a></td><td>Connected and updated to Kotak's current SDK. The Broker tab shows the IP Kotak sees (needed for orders). A refused order no longer logs you out.</td></tr>
+<tr><td><a href="#broker">Orders</a></td><td>After sending an order, the app re-checks the broker and tells you the final result, for example "rejected: margin exceeds". Every order attempt is recorded in the app's log.</td></tr>
+<tr><td><a href="#broker">Holdings and positions</a></td><td>Day change, live price (new <b>LTP</b> column) and running P&amp;L of open positions are filled from live quotes where a broker doesn't send them.</td></tr>
+<tr><td><a href="#watchlist">Watchlists</a></td><td>Each broker account's holdings are now a <b>separate watchlist</b> under "Broker portfolios", instead of sections under Main.</td></tr>
+<tr><td><a href="#catalysts">Catalyst markers</a></td><td><b>Automatic NSE events</b> for every NSE stock (order wins, results, JVs, M&amp;A, splits, bonuses, demergers, dividends and more); click a dot to open the filing. <b>Analyst calls</b> (broker, rating, target) shown as diamonds. The colour key moved off the chart into Settings.</td></tr>
+<tr><td><a href="#settings">Settings</a></td><td><b>Chart markers</b> filter to choose which kinds of markers show, with each marker's shape and colour.</td></tr>
+<tr><td><a href="#tester">Strategy tester</a></td><td>14 more ready-made strategies (19 in all), grouped as Trend following, Mean reversion, Breakout &amp; momentum, and Intraday.</td></tr>
+<tr><td><a href="#charts">Charts</a></td><td>Every chart resets to a clean view when you change the stock. A <b>⌃ / ⌄ N</b> button folds each chart's indicator list. The promotional banner at the top was removed.</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<h2 id="start">Getting started</h2>
+<h3>Opening the app</h3>
+<p>Quant Terminal runs in your web browser, but nothing is on the internet: the app itself runs on your computer. Its address is <a href="http://localhost:3777">http://localhost:3777</a>. Bookmark it.</p>
+<p>Once started, it keeps running in the background, even after you close the browser tab or Claude. Just open the address again.</p>
+
+<h3>Starting and stopping the app yourself</h3>
+<p>You don't need Claude to run the app. In the <code>quant-terminal</code> folder:</p>
+<ul>
+  <li><b>Start Quant Terminal.bat</b>: double-click to start the app and open it in your browser. It runs in the background and its window closes by itself. If the app is already running, it just opens the browser.</li>
+  <li><b>Stop Quant Terminal.bat</b>: double-click to stop the app.</li>
+</ul>
+<p>The app keeps running when you close the browser. It only stops when you use the stop file or restart your computer; after a restart, double-click the start file again.</p>
+<div class="note"><b>Use these files, not start.bat</b>The older <code>start.bat</code> ties the app to its window, and if the app is already running it starts a second copy on another port (3778), which your broker logins don't recognise.</div>
+
+<h3>Checking everything works</h3>
+<p>If something looks wrong, run the health check. It tests the app, checks which data sources your connection can reach, and ends with READY or NOT READY.</p>
+<pre><code>node scripts/check.js</code></pre>
+
+<div class="note"><b>Nothing to sign up for</b>The market data comes from free public sources. You only need keys if you connect a broker (see <a href="#broker">Broker</a>).</div>
+
+<!-- ================================================================ -->
+<h2 id="tour">A tour of the screen</h2>
+<table>
+<tr><th>Area</th><th>What's there</th></tr>
+<tr><td><b>Top toolbar</b></td><td>Symbol name (click it, or just start typing, to change symbol), timeframe buttons (1m to 1W plus a box for any timeframe), chart type, Indicators, Compare, chart layout, Sync (change the symbol on every chart at once), Bar replay, Create alert, log scale, download chart image, export chart data (CSV), light/dark, Settings, and the help button.</td></tr>
+<tr><td><b>Left toolbar</b></td><td>The drawing tools, plus delete. See <a href="#drawing">Drawing tools</a>.</td></tr>
+<tr><td><b>Charts</b></td><td>One to sixteen charts. The one with the blue outline is the <i>active</i> chart: the toolbar and bottom tabs act on it. Click a chart to make it active.</td></tr>
+<tr><td><b>Chart legend</b> (top left of each chart)</td><td>Symbol, timeframe, data source, open/high/low/close and change, and each indicator with its values and gear/eye/remove buttons.</td></tr>
+<tr><td><b>Right side panel</b></td><td>Watchlist, Alerts, Calendar, News.</td></tr>
+<tr><td><b>Bottom panel</b></td><td>Strategy tester, Screener, Heatmap, Seasonals, Financials, Paper trading, Broker, Indicator editor. Click a tab to open it; click it again (or the arrow on the right) to hide the panel.</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<h2 id="symbols">Symbols and markets</h2>
+<p id="symsearch">Click the symbol name at the top left, or just start typing a letter anywhere on the page, to open symbol search.</p>
+<p>The two buttons beside the search box choose where to search: the <b>Indian flag</b> shows only Indian listings, NSE (.NS) and BSE (.BO) stocks, SME stocks and ETFs, found by code (HDFCBANK) or company name (hdfc bank); the <b>globe</b> searches all markets (crypto, US stocks, forex, global indices). The app remembers your choice. In India mode, typing a code and pressing Enter opens its NSE chart even if it isn't in the list.</p>
+<table>
+<tr><th>Market</th><th>How to type it</th><th>Examples</th></tr>
+<tr><td>NSE stocks</td><td>NSE code + <code>.NS</code></td><td><code>RELIANCE.NS</code>, <code>TCS.NS</code>, <code>M&amp;M.NS</code></td></tr>
+<tr><td>BSE stocks</td><td>BSE code + <code>.BO</code></td><td><code>BONDADA.BO</code>, <code>500325.BO</code></td></tr>
+<tr><td>Indian indices</td><td><code>^</code> + index code</td><td><code>^NSEI</code> (Nifty 50), <code>^NSEBANK</code> (Bank Nifty), <code>^BSESN</code> (Sensex), <code>^CNXIT</code> (Nifty IT)</td></tr>
+<tr><td>Crypto</td><td>Pair name</td><td><code>BTCUSDT</code>, <code>ETHUSDT</code></td></tr>
+<tr><td>US stocks and ETFs</td><td>Ticker</td><td><code>AAPL</code>, <code>SPY</code></td></tr>
+<tr><td>Forex</td><td>Pair</td><td><code>EURUSD</code>, <code>GBPUSD</code></td></tr>
+<tr><td>Spreads and ratios</td><td>Two symbols with <code>/</code>, <code>-</code> or <code>*</code></td><td><code>HDFCBANK.NS/ICICIBANK.NS</code></td></tr>
+</table>
+<div class="note"><b>Indian prices are slightly delayed</b>NSE and BSE prices come from Yahoo Finance and run a few minutes behind live. Crypto is live.</div>
+
+<!-- ================================================================ -->
+<h2 id="charts">Timeframes, chart types and layouts</h2>
+<h3>Timeframes</h3>
+<p>Use the buttons (1m, 5m, 15m, 1h, 4h, 1D, 1W) or type any timeframe into the box next to them: <code>7m</code>, <code>2h</code>, <code>3D</code>, <code>2W</code>, <code>3M</code>. Press <kbd>Enter</kbd>.</p>
+<h3>Chart types</h3>
+<p>Candles, hollow candles, bars, Heikin Ashi, line, line with markers, step, area, baseline, columns, Renko, line break, range bars, Kagi, and point &amp; figure.</p>
+<h3>Several charts at once</h3>
+<p>The layout button shows 1, 2, 3, 4, 6, 8 or 16 charts. A common setup is one stock on 1D, 4h, 1h and 15m side by side.</p>
+<ul>
+  <li><b>Sync</b> (top right checkbox) changes the symbol on every chart at once.</li>
+  <li><b>Crosshair across charts</b> (in <a href="#settings">Settings</a>) moves the crosshair on all charts together.</li>
+</ul>
+<h3>Zoom buttons</h3>
+<p>Move the mouse over a chart and a small bar appears at the bottom centre: <b>zoom out</b>, <b>zoom in</b> and <b>reset</b>. Zooming keeps the latest bar where it is, like TradingView. The bar hides while bar replay is running, because the replay controls sit in the same place. You can also zoom with the mouse wheel and drag the chart to scroll.</p>
+<h3>Reset a chart's view</h3>
+<p>If a chart gets hard to read after scrolling, zooming or dragging its price axis, click the reset button in the zoom bar, or <b>right-click on it</b> and choose <b>Reset chart view</b>. It goes back to the latest bars, with every price scale fitting the candles again and indicator panes at their usual height. <b>Reset all chart views</b> does the same for every chart in the layout.</p>
+<p>This happens automatically whenever you change the instrument, whether by typing a symbol or clicking a watchlist row, screener result, heatmap tile, calendar entry or broker holding: every chart starts from a clean view of the new stock.</p>
+<h3>Countdown to the next bar</h3>
+<p>On intraday charts, a small timer under the last-price label shows how long until the current candle closes. It hides when the market is closed (after 15:30 IST for NSE and BSE), in bar replay, and on daily and longer charts.</p>
+<h3>Other chart tools</h3>
+<ul>
+  <li><b>Compare</b> overlays another symbol, for example a stock against the Nifty.</li>
+  <li><b>Log scale</b> for long-term charts.</li>
+  <li><b>Download chart image</b> saves a picture of the chart.</li>
+  <li><b>Export chart data</b> saves the bars and every indicator's values as a CSV file for Excel.</li>
+  <li><b>Light / dark</b> switches the colour theme.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="indicators">Indicators</h2>
+<p>Click <b>Indicators</b> in the toolbar and search: 87 built in, with no limit per chart. They include moving averages, RSI, MACD, Bollinger Bands, Supertrend, Ichimoku, VWAP and anchored VWAP, ADX, pivots, volume profiles and candlestick patterns.</p>
+<ul>
+  <li><b>Change settings:</b> click the gear next to the indicator in the chart legend.</li>
+  <li><b>Hide or remove:</b> the eye and × buttons in the legend.</li>
+  <li><b>Fold the indicator list:</b> click the small <b>⌃</b> under a chart's indicators to fold the list into one chip such as <b>⌄ 6</b>, so it doesn't cover the candles. Click the chip to unfold it. The indicators stay on the chart, and each chart remembers its own choice.</li>
+  <li><b>Indicator on an indicator:</b> set an indicator's source to another indicator, for example an average of RSI.</li>
+  <li><b>Higher timeframe values:</b> show, say, daily RSI on a 1h chart.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="drawing">Drawing tools</h2>
+<p>The left toolbar has 13 tools: trend line, ray, extended line, horizontal line and ray, vertical line, parallel channel, rectangle, Fibonacci retracement, measure, long position, short position, and text.</p>
+<ol>
+  <li>Pick a tool, then click on the chart for each point.</li>
+  <li>The tool switches back to the cursor after each drawing. To keep drawing with the same tool, change <b>After placing a drawing</b> in <a href="#settings">Settings</a>.</li>
+  <li>Click a drawing to select it; drag its points to adjust it.</li>
+  <li>Delete a selected drawing with <kbd>Delete</kbd> or the bin button.</li>
+</ol>
+<p>Drawings are saved per symbol and come back when you reopen it. A trend line, ray or horizontal line can also be used as an <a href="#alerts">alert</a>.</p>
+
+<!-- ================================================================ -->
+<h2 id="catalysts">Catalyst markers <span class="tag">India</span></h2>
+<p>Company events show as coloured dots above the candle on the event's date. They come from two places:</p>
+<ul>
+  <li><b>Automatically from NSE, for every NSE stock:</b> order wins, results dates, JVs and agreements, M&amp;A and restructuring, splits and bonuses, demergers, dividends, buybacks, fund raising, capacity and commissioning, credit rating upgrades and downgrades, regulatory and legal actions, and press releases. Routine paperwork is left out. <b>Click a dot to open the actual NSE filing</b> (a PDF) in a new tab. BSE-only stocks don't get these, because BSE blocks automatic access.</li>
+  <li><b>Analyst calls, from news headlines</b>, shown as <b>diamonds</b>: green for Buy / Accumulate / Outperform / upgrade, amber for Hold / Neutral / Equal weight, red for Sell / Reduce / downgrade, grey when only a target is mentioned. Hover to see the broker, rating and target (for example "Motilal Oswal: Buy, target ₹488") with the original headline underneath, so you can check what was read; click to open the article. A headline only counts when it names a known brokerage and gives a rating, a target or a target change. Lists of several stocks and generic "price target" forecast sites are skipped. These come from news reports of broker notes, not the brokers' reports themselves, so check the article before acting on one.</li>
+  <li><b>Your own catalyst file</b> (below), with your themes, scores and conviction. When your file and NSE both have an order win on the same day, yours is shown.</li>
+</ul>
+<ul>
+  <li><b>Colour</b> = the event's <b>theme</b>. Each theme always has the same colour, on every chart.</li>
+  <li><b>Hover</b> over a dot to read <b>"Theme: title"</b>, with the date, company, category, sentiment, score and conviction underneath. If several events fall on one day, you see them all.</li>
+  <li><b>Round dot</b> = positive or neutral news. <b>Square</b> = negative news.</li>
+  <li>Dots sit a clear gap above the candle's high, so the top of the wick stays easy to see and click when drawing trend lines or Fibonacci levels.</li>
+  <li>Dots show on <b>daily, weekly and monthly charts only</b>. Intraday charts stay clean.</li>
+</ul>
+<h3>Choosing which markers show</h3>
+<p>In <b>Settings</b>, the <b>Chart markers</b> section has a tick box for each kind: your catalyst file, analyst calls, order wins, results, JVs, M&amp;A, splits and bonuses, demergers, dividends, buybacks, fund raising, capacity, credit ratings, regulatory, and news. Untick what you don't want, or use <b>All</b> / <b>None</b>, then <b>Save</b>. The choice is remembered.</p>
+<p>Each tick box shows what its marker looks like: its shape and colour. A line above them is the key: ● circle = company event, ■ square = negative news (fraud, default, penalty), ◆ diamond = analyst call (green Buy, amber Hold, red Sell, grey target only).</p>
+<h3>Marker colours for NSE events</h3>
+<p>The chart doesn't show a colour key, so it stays clear: hover over any marker to see its type, or look in <b>Settings → Chart markers</b>. The NSE event colours are:</p>
+<table style="max-width:320px"><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#2962ff;margin-right:6px;vertical-align:-1px"></span>Order win</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ff9800;margin-right:6px;vertical-align:-1px"></span>Results</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ab47bc;margin-right:6px;vertical-align:-1px"></span>JV / Agreement</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#00bcd4;margin-right:6px;vertical-align:-1px"></span>M&amp;A / Restructuring</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ffd600;margin-right:6px;vertical-align:-1px"></span>Split / Bonus</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#26a69a;margin-right:6px;vertical-align:-1px"></span>Demerger</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#8d6e63;margin-right:6px;vertical-align:-1px"></span>Dividend</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#d4e157;margin-right:6px;vertical-align:-1px"></span>Buyback</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#5c6bc0;margin-right:6px;vertical-align:-1px"></span>Fund raising</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#7cb342;margin-right:6px;vertical-align:-1px"></span>Capacity / Commissioning</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#90a4ae;margin-right:6px;vertical-align:-1px"></span>Credit rating</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#ec407a;margin-right:6px;vertical-align:-1px"></span>Regulatory / Legal</td></tr><tr><td><span style="display:inline-block;width:11px;height:11px;border-radius:50%;background:#e0e0e0;margin-right:6px;vertical-align:-1px"></span>News</td></tr></table>
+<p>Events from your own file are coloured by their theme. You can choose any colour, for NSE types too, in <code>catalyst-colors.json</code> (below).</p>
+<h3>Adding or updating events</h3>
+<p>The events are read from <code>quant-terminal\data\catalysts.csv</code>. To update them, save your Google Sheet as CSV (File → Download → Comma-separated values) over that file. The app picks up the change the next time you open a chart. The columns are:</p>
+<pre><code>date,stock,industry,category,theme,sentiment,title,score,conviction</code></pre>
+<ul>
+  <li><b>date</b> as <code>2026-09-28</code> (year-month-day).</li>
+  <li><b>stock</b> is the company name. The app matches it to its NSE code, or BSE code if it isn't on NSE.</li>
+  <li><b>Optional <code>symbol</code> column:</b> add it to fix a name the app matches wrongly, for example <code>DBL</code>, or <code>BONDADA.BO</code> for a BSE stock.</li>
+</ul>
+<h3>Choosing your own colours</h3>
+<p>Create <code>data\catalyst-colors.json</code> with any themes you want to colour yourself:</p>
+<pre><code>{ "Solar EPC": "#ff9800", "Luxury housing": "#ab47bc" }</code></pre>
+<div class="note"><b>Name matches are remembered</b>Each company's match is saved in <code>data\catalyst-symbols.json</code>. You can edit or delete a line there to make the app look it up again.</div>
+
+<!-- ================================================================ -->
+<h2 id="watchlist">Watchlists</h2>
+<ul>
+  <li>Type a symbol in <b>Add symbol</b> and press <kbd>Enter</kbd>. Click a row to open its chart.</li>
+  <li><b>+ List</b> makes a new list; the drop-down switches lists; <b>Delete</b> removes the current list.</li>
+  <li><b>Broker portfolios</b> are their own watchlists: the list menu has <b>My lists</b> (yours) and <b>Broker portfolios</b>, with one list per connected account, for example "Zerodha portfolio (22)" or "Kotak Neo portfolio (1)". They follow your actual holdings, so they can't be edited or deleted here. Every account connected to the app gets its own list.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="alerts">Alerts</h2>
+<p>Click <b>Create alert</b> in the toolbar. An alert can be:</p>
+<ul>
+  <li>Up to five price or indicator conditions, all of them or any of them (for example: close crosses above the 50 EMA <i>and</i> RSI is above 50).</li>
+  <li>Price crossing a trend line, ray or horizontal line you've drawn.</li>
+</ul>
+<p>Alerts are checked every 15 seconds on your computer, while the app is running, even with the browser closed. You get a desktop pop-up and a sound, and optionally a message to Discord, Slack or Telegram. The <b>Alerts</b> tab lists them and what has fired.</p>
+
+<!-- ================================================================ -->
+<h2 id="calendar">Calendar</h2>
+<p>The economic calendar for this week by impact, plus US earnings and dividends for the next five trading days.</p>
+
+<!-- ================================================================ -->
+<h2 id="news">News <span class="tag">India</span></h2>
+<p>The <b>News</b> tab shows headlines for the active chart's symbol:</p>
+<ul>
+  <li><b>Indian stocks and indices:</b> the last 7 days from Indian and global news sites (Business Standard, Livemint, The Hindu, Reuters and others) through Google News.</li>
+  <li><b>US stocks:</b> from Nasdaq. <b>Crypto:</b> from Cointelegraph and Decrypt.</li>
+</ul>
+<p>Click a headline to read the full story.</p>
+
+<!-- ================================================================ -->
+<h2 id="screener">Screener <span class="tag">India</span></h2>
+<p>Opens on <b>India (Nifty 500)</b>. Also: crypto, US stocks and US ETFs.</p>
+<ul>
+  <li><b>Filters:</b> search by name, price range, % change range, minimum volume, minimum market cap, and sector (NSE's industry groups).</li>
+  <li><b>Sort</b> by clicking any column heading.</li>
+  <li><b>Technical filter:</b> choose an <b>Indicator</b>, adjust its settings (for example Bollinger Bands length 20, StdDev 2), then pick a <b>Condition</b> made for that indicator, such as "Upper above Price by 0% to 5% — Upper band proximity", "Lower crosses down Price — Oversold re-entry", "Crosses up EMA 200 — Golden cross", "MACD crosses up Signal below 0" or "Volume above its MA by 100% or more". Choose the timeframe in <b>On</b>, then <b>Scan top 100</b> to check the 100 most traded stocks that pass your other filters. <b>Manual setup…</b> at the bottom of the list lets you build any rule yourself.</li>
+  <li>Click a row to open its chart.</li>
+</ul>
+<h3>How the conditions read</h3>
+<p>Conditions are worded the way TradingView's screener words them: the indicator line first, then where it is compared with price. "Upper below Price" means the upper band is below the price, so price has broken out above it. "Basis crosses down Price" means price has just crossed above the middle line. The text after the dash says what it means for the trade. "By 0% to 5%" means the gap between the two is between 0% and 5% of the second one. Conditions that list two things ("Crosses up Signal below 0") need both to be true.</p>
+<p>Market cap is the live price × shares outstanding. Share counts are refreshed once a week in the background.</p>
+
+<!-- ================================================================ -->
+<h2 id="heatmap">Heatmap <span class="tag">India</span></h2>
+<p>Each tile is a stock. <b>Colour</b> = today's change (green up, red down; stronger colour = bigger move). <b>Size</b> = market cap (or volume, from the <b>Size by</b> menu). Stocks are grouped by sector. Click a tile to open its chart.</p>
+<p>With Market set to <b>India (NSE)</b>, the <b>Index</b> menu picks what to show:</p>
+<table>
+<tr><th>Broad</th><th>Sectors</th><th>Themes</th></tr>
+<tr><td>Nifty 500 (all sectors)<br>Nifty 50</td>
+<td>Bank, Private Bank, PSU Bank, Financial Services, IT, Auto, FMCG, Pharma, Healthcare, Metal, Realty, Energy, Oil &amp; Gas, Media, Consumer Durables</td>
+<td>India Consumption, Infrastructure, Commodities, PSE, CPSE, MNC</td></tr>
+</table>
+<p>The app remembers your last choice. Index members come from NSE's official lists.</p>
+
+<!-- ================================================================ -->
+<h2 id="seasonals">Seasonals</h2>
+<p>For the active symbol: each year's path from 1 January, the average year, and a table of monthly returns, so you can see which months have tended to be strong or weak.</p>
+
+<!-- ================================================================ -->
+<h2 id="financials">Financials <span class="tag">India</span></h2>
+<p>Open an NSE or BSE stock, then the <b>Financials</b> tab.</p>
+<ul>
+  <li><b>Key stats:</b> price, market cap, 52-week high and low, P/E (last full year), book value per share, price-to-book.</li>
+  <li><b>Statements:</b> income statement, balance sheet and cash flow, <b>Annual</b> or <b>Quarterly</b>.</li>
+  <li><b>Ratios:</b> net margin, operating margin, return on equity, debt-to-equity.</li>
+  <li>A revenue and net income bar chart.</li>
+</ul>
+<p>Figures are in <b>₹ crore</b> (1 crore = 10 million); brackets mean negative. Years are labelled FY26, FY25 and so on (FY26 = April 2025 to March 2026). Data from Yahoo Finance.</p>
+<div class="note"><b>Gaps are normal</b>Yahoo is missing some quarters for some companies, and banks and insurers don't report lines like gross profit. The annual view is the most complete.</div>
+
+<!-- ================================================================ -->
+<h2 id="tester">Strategy tester and quant checks</h2>
+<p>Test a trading idea on past prices of the active chart.</p>
+<ol>
+  <li>Open <b>Strategy tester</b>. Load a ready-made strategy (for example EMA cross 9/21) or build your own entry and exit rules.</li>
+  <li>Set fees and slippage, and optionally a stop loss, take profit or trailing stop, long or short.</li>
+  <li>Click <b>Run on chart</b>. You get net profit against buy-and-hold, max drawdown, win rate, profit factor, Sharpe, an equity curve and the full trade list (export it as CSV). Trades are marked on the chart; <b>Clear chart marks</b> removes them.</li>
+</ol>
+<h3>Ready-made strategies</h3>
+<p><b>Load a strategy…</b> lists 19 widely used strategies in four groups. Load one, adjust it if you like, then <b>Run on chart</b>.</p>
+<table>
+<tr><th>Group</th><th>Strategies</th><th>Best on</th></tr>
+<tr><td>Trend following</td><td>EMA cross (9/21), Golden Cross (50/200 SMA), Minervini trend template, EMA 20/50 trend pullback, Donchian / Turtle breakout (20/10), Supertrend follow, ADX + DMI trend, Ichimoku cloud breakout, Parabolic SAR + 200 EMA</td><td>Daily / weekly</td></tr>
+<tr><td>Mean reversion</td><td>RSI mean reversion (30/55), Connors RSI(2), Bollinger bounce + 200 SMA, Stochastic pullback</td><td>Daily</td></tr>
+<tr><td>Breakout &amp; momentum</td><td>52-week high breakout + volume, Bollinger breakout, Bollinger squeeze breakout, MACD + 200 EMA trend filter, MACD zero-line momentum</td><td>Daily</td></tr>
+<tr><td>Intraday</td><td>VWAP + EMA trend</td><td>5m / 15m</td></tr>
+</table>
+<div class="warn"><b>No strategy is guaranteed</b>These are well-known and widely taught, not approved or recommended. How each performs depends on the stock, timeframe and costs. Set realistic fees and slippage for Indian markets, and always run the <b>Quant checks</b> before trusting a result.</div>
+<h3>Quant checks</h3>
+<p>A good backtest can be luck. <b>Quant checks</b> run the tests professional desks use before trusting a result: walk-forward testing, overfitting (PBO), deflated Sharpe, higher costs, Monte Carlo, and nearby settings. You get a pass count and a plain-language verdict.</p>
+<h3>Your own data</h3>
+<p>The tester's <b>Your own data</b> row imports a CSV of bars, or a CSV of signals your own code produced, so you can test them the same way.</p>
+
+<!-- ================================================================ -->
+<h2 id="replay">Bar replay</h2>
+<p>Practise reading charts without knowing what comes next.</p>
+<ol>
+  <li>Click <b>Bar replay</b> in the toolbar and click the bar to start from. Everything after it is hidden.</li>
+  <li>Step forward one bar at a time, or play at 0.5× to 10×, on one chart or every chart in the layout.</li>
+  <li>Paper trade while it plays. Replay trades use a separate practice account.</li>
+</ol>
+<p>Catalyst markers appear only once replay reaches their date.</p>
+
+<!-- ================================================================ -->
+<h2 id="paper">Paper trading</h2>
+<p>Practise with pretend money. The <b>Paper trading</b> tab has an order ticket for the active chart (market, limit and stop orders, with an optional stop and target), and shows your positions, orders and profit and loss. Nothing here touches a real account.</p>
+
+<!-- ================================================================ -->
+<h2 id="broker">Broker accounts: Zerodha, Kotak Neo, ICICI Direct <span class="tag">India</span></h2>
+<div class="warn"><b>Real money</b>Orders from the Broker tab go to your real broker account. Every order shows a summary for you to confirm first. Test with 1 share at a limit price far from the market before trading normally.</div>
+
+<h3>What you get</h3>
+<ul>
+  <li>One button per account in the Broker tab (a ● means logged in today).</li>
+  <li>Available and used funds under the order window, and four tabs on the right, like Zerodha's:
+    <ul>
+      <li><b>Portfolio:</b> holdings (quantity, average price, last price, day change, value, P&amp;L).</li>
+      <li><b>Orders:</b> today's orders, split into <b>Open</b> (still waiting at the broker) and <b>Executed and closed</b> (filled, cancelled or rejected, with the reason). The tab shows how many are open.</li>
+      <li><b>Positions:</b> today's positions with their live price (<b>LTP</b>) and P&amp;L.</li>
+      <li><b>GTT orders:</b> the GTTs Quant Terminal is watching (see <a href="#gtt">GTT orders</a>).</li>
+    </ul>
+    The app remembers the tab you were on, and after you place an order (or save a GTT) it opens the Orders (or GTT orders) tab. Click a stock in any tab to open its chart.</li>
+  <li>Where a broker doesn't send a figure (Kotak's day change, open-position P&amp;L, ICICI's prices), the app fills it from its live quote.</li>
+  <li>A watchlist per account made from its holdings (see <a href="#watchlist">Watchlists</a>).</li>
+  <li>An <b>order ticket</b> for the active chart's NSE stock: Buy or Sell, quantity, Limit / Market / Stop-loss limit / Stop-loss market, Delivery (CNC) or Intraday (MIS). ICICI Direct accounts only offer Limit / Stop-loss limit and Delivery, as ICICI's API requires.</li>
+  <li>After you send an order, the app waits a moment, re-reads the broker's order book and tells you the result: accepted, or rejected with the broker's reason (for example "RMS: Margin Exceeds").</li>
+</ul>
+
+<h3>Several accounts, several brokers</h3>
+<p>The app supports any number of <b>Zerodha</b>, <b>Kotak Neo</b> and <b>ICICI Direct</b> accounts. Each account has its own button in the Broker tab, its own "… portfolio" section in the Watchlist and its own order ticket. <b>Settings → Broker accounts</b> lists them all with their status.</p>
+<p>Accounts live in <code>quant-terminal\data\brokers.json</code>, under <code>"accounts"</code>. Each has a fixed <code>"id"</code> (used in redirect URLs), a <code>"broker"</code> (<code>zerodha</code>, <code>kotak</code> or <code>icici</code>), a <code>"name"</code> you can change freely (for example "Zerodha – Mom"), and that broker's keys. To add another account, copy an entry, give it a new id such as <code>zerodha-3</code>, and fill in its keys. Type the keys in yourself; they stay on this computer and only go to their own broker.</p>
+<h3>One-time setup per account</h3>
+<p><b>Zerodha</b> (Kite Connect)</p>
+<ol>
+  <li>Log in to <b>developers.kite.trade</b> <i>with that Zerodha account</i> and create an app. Each Kite app only works with the one Zerodha client ID it belongs to; logging in with another ID gives "The user is not enabled for the app".</li>
+  <li>Set its Redirect URL to <code>http://127.0.0.1:3777/api/broker/kite/callback</code> (the same for every Zerodha account).</li>
+  <li>Put its API key and secret in <code>"apiKey"</code> and <code>"apiSecret"</code> of that account.</li>
+</ol>
+<p><b>Kotak Neo</b></p>
+<ol>
+  <li>Register for TOTP once at <b>kotaksecurities.com/platform/kotak-neo-trade-api</b> (Google or Microsoft Authenticator).</li>
+  <li>In Neo, <b>More → Trade API</b>: generate an application, copy its token (the consumer key), and <b>whitelist this computer's IP</b> on it. Kotak refuses API orders ("unauthorized") from any other IP. The Broker tab shows the IP Kotak sees.</li>
+  <li>Put the token, mobile number (with +91) and client code in <code>"accessToken"</code>, <code>"mobileNumber"</code> and <code>"ucc"</code>.</li>
+</ol>
+<p><b>ICICI Direct</b> (Breeze API)</p>
+<ol>
+  <li>Log in to <b>api.icicidirect.com</b> with that ICICI Direct account and register an app.</li>
+  <li>Set its Redirect URL to <code>http://127.0.0.1:3777/api/broker/<i>id</i>/callback</code> with the account's id, for example <code>.../api/broker/icici-1/callback</code>, and register your <b>static IP</b>. ICICI only accepts API orders from it, and lets you change it once a week.</li>
+  <li>Put the App Key and Secret Key in <code>"apiKey"</code> and <code>"apiSecret"</code>.</li>
+</ol>
+<div class="note"><b>ICICI's rules for API orders</b>Limit and stop-loss limit orders only (SEBI doesn't allow market orders through Breeze), delivery (CNC) only, NSE only. ICICI's stock codes differ from NSE symbols (HDFBAN is HDFCBANK, NIFJUN is JUNIORBEES), so the app matches holdings by ISIN using ICICI's own security list. Unlisted holdings are shown without a chart.</div>
+<h3 id="orderwindow">The order window</h3>
+<p>The left side of the Broker tab is an order window for the active chart's stock, laid out like Zerodha's:</p>
+<ul>
+  <li><b>Header:</b> the stock, a <b>Buy / Sell switch</b> (blue for buy, orange for sell), and the live <b>NSE</b> and <b>BSE</b> prices. Orders go to NSE; BSE isn't supported yet.</li>
+  <li><b>Regular tab:</b> <b>Intraday (MIS)</b> or <b>Longterm (CNC)</b>, Qty, Price (starts at the live price) and Trigger price, and <b>Market / Limit / SL / SL-M</b>. Fields that don't apply are greyed out.</li>
+  <li><b>GTT tab:</b> see <a href="#gtt">GTT orders</a> below.</li>
+  <li><b>Footer:</b> the amount <b>Required</b> (for intraday, about a fifth, as brokers give roughly 5× leverage) and your <b>Available</b> funds, with the Buy / Sell (or Place GTT) button and Cancel to clear the form.</li>
+</ul>
+<p>Every order shows a summary to confirm before it is sent. ICICI Direct accounts only offer Limit / SL and Longterm, as ICICI's API requires.</p>
+
+<h3 id="gtt">GTT orders and trailing stop-loss (kept in Quant Terminal)</h3>
+<p>A GTT ("good till triggered") waits for a price before placing an order. Unlike the broker's own GTT, these are <b>kept inside Quant Terminal</b>: nothing is sent to the broker until a trigger is hit, and they work the same for every broker and account.</p>
+<ul>
+  <li><b>Single:</b> one trigger. Place an order when the price falls to a level (a stop-loss, or buying a dip) or rises to it (a breakout).</li>
+  <li><b>OCO</b> (one cancels the other): a <b>stop-loss</b> and a <b>target</b> together. Whichever is hit first places its order and the other is cancelled. For a sell, the stop is below the price and the target above.</li>
+  <li><b>Trailing stop-loss:</b> tick <b>Trailing</b> on the stop-loss and choose how far it follows, as a % or in ₹ from the best price. The stop moves up as the price makes new highs (down as it makes new lows, for a buy) and <b>never moves back</b>. When the price falls back to the stop, the order is placed. If the trail is tighter than the trigger you typed, the stop jumps to the trail at the first check.</li>
+  <li>Each leg places a <b>Limit</b> order (with a trailing stop, the limit price moves with it) or a <b>Market</b> order. ICICI takes no market orders, so a Market leg on an ICICI account goes out as a limit order 1% through the price.</li>
+  <li><b>% of LTP</b> and the trigger price stay in step: type either one. Triggers start 5% either side of the price.</li>
+</ul>
+<p><b>How it watches:</b> every 5 seconds from 09:15 to 15:30 IST on weekdays, using the same live prices as the charts. When a trigger is hit, Quant Terminal places the order with the GTT's account, then alerts you with a pop-up, a sound and a desktop notification. The <b>GTT orders</b> tab on the right of the Broker panel shows each GTT's triggers (with a trailing stop's current level and best price), the last price and its status.</p>
+<table>
+<tr><th>Status</th><th>Meaning</th></tr>
+<tr><td>Watching</td><td>Waiting for a trigger.</td></tr>
+<tr><td>Needs login</td><td>A trigger was hit while the account wasn't logged in. You get an alert; log in from the Broker tab and it places at the next check, if the price is still past the trigger.</td></tr>
+<tr><td>Triggered</td><td>The order was sent. Check its result in the Orders tab.</td></tr>
+<tr><td>Order refused</td><td>The broker refused it (funds, IP, limits). It is not retried, so it can never be placed twice.</td></tr>
+<tr><td>Cancelled / Expired</td><td>Stopped by you, or one year after it was made.</td></tr>
+</table>
+<div class="warn"><b>Keep the app running</b>GTTs only work while Quant Terminal is running and the account is logged in (brokers end sessions overnight, so log in each trading morning). Prices for Indian stocks can lag a little, so a fast move can go past a trigger before the order is placed. GTT orders are real orders: the same ₹5 lakh limit and broker rules apply.</div>
+
+<h3>Logging in each day</h3>
+<p>Brokers end API sessions overnight (around 6 am), so log in once each trading day, for each account, from the Broker tab:</p>
+<ul>
+  <li><b>Zerodha and ICICI Direct:</b> click <b>Log in to …</b>. The broker's own login page opens in a pop-up, which closes itself when you're done.</li>
+  <li><b>Kotak Neo:</b> type your 6-digit TOTP and your MPIN, then <b>Log in to Kotak Neo</b>. Neither is saved.</li>
+</ul>
+
+<h3>Safety limits</h3>
+<ul>
+  <li>Only NSE stocks (symbols ending in .NS) can be ordered.</li>
+  <li>Any order worth more than <b>₹5,00,000</b> is refused. Change <code>"maxOrderValue"</code> in <code>brokers.json</code> to raise or lower this.</li>
+  <li>Market orders need a current price to check the size; if one isn't available, use a limit order.</li>
+  <li>Only this computer can use the Broker features, and other websites can't send orders through the app.</li>
+  <li>Kotak and ICICI only accept API orders from an IP address registered with them. Reading your account works without it.</li>
+  <li>Every order attempt and the broker's reply are written to the app's log (<code>data/server.log</code>), without any keys or tokens.</li>
+</ul>
+
+<!-- ================================================================ -->
+<h2 id="editor">Indicator editor</h2>
+<p>Write your own indicator in JavaScript and add it to charts like a built-in one. Each indicator is a file in the <code>custom</code> folder, checked before it loads; any problem is named. An AI assistant such as Claude can write one for you from a description.</p>
+
+<!-- ================================================================ -->
+<h2 id="settings">Settings</h2>
+<p>Click the gear in the top toolbar.</p>
+<table>
+<tr><th>Setting</th><th>What it does</th></tr>
+<tr><td>Bars to load per chart</td><td>How much history each chart loads (200 to 20,000; default 3,000). More bars means more history but slower loading.</td></tr>
+<tr><td>Time axis</td><td>Your local time (IST) or UTC.</td></tr>
+<tr><td>Volume on the price chart</td><td>Show or hide the volume bars at the bottom of the chart.</td></tr>
+<tr><td>After placing a drawing</td><td>Go back to the cursor, or keep the same drawing tool for the next one.</td></tr>
+<tr><td>Crosshair across charts</td><td>Move the crosshair on every chart together, or each on its own.</td></tr>
+<tr><td id="keynav">↑ ↓ keys</td><td><b>Step through the stock list</b> (the default) or <b>Do nothing</b>. See below.</td></tr>
+<tr><td>Chart markers</td><td>Which kinds of events show as markers on daily charts, with each marker's shape and colour (see <a href="#catalysts">Catalyst markers</a>).</td></tr>
+<tr><td>Broker accounts</td><td>Every account in <code>brokers.json</code>: its name, broker, id, and whether it is connected, set up but not logged in, or still missing keys. Add, rename or remove accounts in the file; log in from the Broker tab.</td></tr>
+</table>
+<p>This manual is linked from the bottom of the Settings window.</p>
+
+<!-- ================================================================ -->
+<h2 id="data">Your data and backups</h2>
+<p>Everything personal to you is saved automatically in the <code>quant-terminal\data</code> folder and is still there after you close the app, close Claude or restart your computer.</p>
+<table>
+<tr><th>File</th><th>What it holds</th></tr>
+<tr><td><code>state.json</code></td><td>Watchlists, chart layouts, drawings, indicators, timeframes, settings, paper trading account, strategies</td></tr>
+<tr><td><code>alerts.json</code></td><td>Your alerts</td></tr>
+<tr><td><code>catalysts.csv</code></td><td>Your catalyst events</td></tr>
+<tr><td><code>catalyst-colors.json</code>, <code>catalyst-symbols.json</code></td><td>Your theme colours and company-to-code matches</td></tr>
+<tr><td><code>brokers.json</code></td><td>Your broker accounts (names, ids and API keys) and the order limit. Earlier versions are kept as <code>brokers.json.before-accounts.bak</code> and <code>brokers.json.before-multi-account.bak</code></td></tr>
+<tr><td><code>broker-sessions.json</code></td><td>Today's broker logins (cleared daily)</td></tr>
+<tr><td><code>india-shares.json</code></td><td>Share counts for market caps (refreshed weekly)</td></tr>
+<tr><td><code>icici-scrips.json</code></td><td>ICICI's stock codes and ISINs, to match ICICI holdings to NSE symbols (refreshed daily)</td></tr>
+<tr><td><code>server.log</code></td><td>The app's log: broker logins, order attempts, GTT triggers and their results</td></tr>
+<tr><td><code>gtt.json</code></td><td>Your GTT orders, their trailing stops and history</td></tr>
+<tr><td><code>imports\</code></td><td>Data files you imported into the strategy tester</td></tr>
+</table>
+<div class="note"><b>Back it up</b>Copy the whole <code>data</code> folder somewhere safe now and then. To move to a new computer, install the app there and copy the folder in.</div>
+<div class="warn"><b>About updates</b>The Indian-market features in this copy were added specially. Downloading a fresh copy of Quant Terminal would replace them (your <code>data</code> folder stays safe). Ask Claude to add them back if that happens.</div>
+
+<!-- ================================================================ -->
+<h2 id="keys">Keyboard shortcuts</h2>
+<table>
+<tr><th>Key</th><th>Does</th></tr>
+<tr><td>Any letter or number</td><td>Opens symbol search with that character typed</td></tr>
+<tr><td><kbd>↑</kbd> <kbd>↓</kbd> <kbd>Enter</kbd></td><td>Move through and pick a symbol search result</td></tr>
+<tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Open the previous / next stock in the list you last clicked: the watchlist, screener results, or the Broker tab's holdings, orders, positions or GTTs (each table on its own). The row is highlighted, and holding the key skims the list; the chart loads when you stop. Starts in the watchlist if you haven't clicked a list yet. Doesn't act while you're typing in a box. Turn it off in <a href="#keynav">Settings</a>.</td></tr>
+<tr><td><kbd>Delete</kbd> or <kbd>Backspace</kbd></td><td>Deletes the selected drawing</td></tr>
+<tr><td><kbd>Esc</kbd></td><td>Closes a window, leaves the drawing tool, or unselects a drawing</td></tr>
+<tr><td><kbd>Enter</kbd> in the timeframe box</td><td>Applies a custom timeframe such as 2h or 3D</td></tr>
+<tr><td>Right-click on a chart</td><td>Reset chart view, or reset every chart's view</td></tr>
+</table>
+
+<!-- ================================================================ -->
+<h2 id="help">Troubleshooting</h2>
+<h3>The page won't open</h3>
+<p>The app isn't running, usually after a restart. Double-click <code>start.bat</code>, or run <code>node scripts/launch.js</code> from the <code>quant-terminal</code> folder.</p>
+<h3>A chart says "Couldn't load" or stays empty</h3>
+<ul>
+  <li>Check the symbol: Indian stocks need <code>.NS</code> or <code>.BO</code>.</li>
+  <li>Yahoo sometimes limits requests for a few minutes. Wait and reload; the <b>Data status</b> button shows which sources are working.</li>
+  <li>Run <code>node scripts/check.js</code> to test everything.</li>
+</ul>
+<h3>A chart is squashed, scrolled away or shows no candles</h3>
+<p>Right-click on it and choose <b>Reset chart view</b>.</p>
+<h3>No catalyst dots on a stock</h3>
+<ul>
+  <li>Switch to a daily or longer timeframe; dots don't show on intraday charts.</li>
+  <li>Check the stock is in <code>catalysts.csv</code> and its date is within the bars loaded.</li>
+  <li>If the company was matched to the wrong code, add a <code>symbol</code> column or fix <code>catalyst-symbols.json</code>.</li>
+</ul>
+<h3>The heatmap says market caps are still loading</h3>
+<p>The first time, share counts take a minute or two to load; until then tiles are sized by traded value. Reopen the heatmap shortly.</p>
+<h3>Broker says "session has ended"</h3>
+<p>Log in again from the Broker tab. Brokers end sessions overnight.</p>
+<h3>Zerodha: "The user is not enabled for the app"</h3>
+<p>You logged in with a Zerodha ID that isn't linked to that account's Kite app. Each Kite app only works for the client ID it was created under: log in with that ID, or create the app under the other account on developers.kite.trade.</p>
+<h3>Zerodha or ICICI: the pop-up says "127.0.0.1 refused to connect"</h3>
+<p>The Redirect URL in the broker's app settings is missing the port or path. It must be exactly <code>http://127.0.0.1:3777/api/broker/kite/callback</code> for Zerodha, or <code>http://127.0.0.1:3777/api/broker/icici-1/callback</code> (with that account's id) for ICICI. To finish the login you're in, add <code>:3777</code> after <code>127.0.0.1</code> in the pop-up's address and press Enter.</p>
+<h3>Orders refused: "unauthorized" (Kotak, ICICI) or "No IPs configured" (Zerodha)</h3>
+<p>The order came from an IP address that isn't registered. The Broker tab shows the IP Kotak sees; whitelist it on the account's Trade API application in Neo (More → Trade API), log in again, then retry. For <b>Zerodha</b> ("No IPs configured for this app"), add the IP under <b>IP Whitelist</b> on your Kite Connect <b>Profile</b> page (developers.kite.trade → Profile, up to 2 IPs) and save; the Redirect URL stays the same. For ICICI, register your static IP on the Breeze API app. Home internet IPs can change; if orders stop working later, check the IP again or ask your provider for a static IP.</p>
+<h3>Kotak: "Invalid field 'MobileNumber'"</h3>
+<p>Write the mobile number with the country code, for example <code>+919876543210</code>, in <code>brokers.json</code>.</p>
+<h3>An order was refused</h3>
+<p>The message says why: over your ₹5 lakh limit, not an NSE stock, missing price or trigger, or the broker's own reason, such as "RMS: Margin Exceeds" when the order needs more funds than the account has available (shown under <b>Funds</b>). Check the <b>Orders</b> tab for the broker's status message.</p>
+
+<h2 id="credits">Credits</h2>
+<p>Charting by Rajan. Charts are drawn with <a href="https://www.tradingview.com/lightweight-charts/" target="_blank" rel="noopener">TradingView Lightweight Charts™</a> (Apache License 2.0), Copyright © 2025 TradingView, Inc. <a href="https://www.tradingview.com/" target="_blank" rel="noopener">tradingview.com</a></p>
+</main>
+</div>
+<a class="top" href="#">↑ Top</a>
+<script>
+// Match the app's light/dark choice when opened from it.
+try {
+  const t = new URLSearchParams(location.search).get("theme");
+  if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+} catch {}
+</script>
+</body>
+</html>
