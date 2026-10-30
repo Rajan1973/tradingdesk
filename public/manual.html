@@ -117,6 +117,10 @@ a { color: var(--accent); }
 <h2 id="new">What's new <span class="tag">26 Oct 2026</span></h2>
 <table>
 <tr><th>Area</th><th>What changed</th></tr>
+<tr><td id="layouts">Saved layouts</td><td>A <b>Layouts</b> button in the top bar. Type a name and click <b>Save current</b> to keep the whole chart area: the layout (1 to 16 charts) and each chart's stock, timeframe, chart type and indicators with their settings. Saved layouts are listed with their stocks; click <b>Open</b> to bring one back, or × to delete it. Saving with an existing name replaces it. Kept in <code>data/state.json</code>.</td></tr>
+<tr><td>Kotak live prices</td><td><b>Settings → Indian chart prices → Yahoo history + Kotak Neo live price</b>: while the market is open and a Kotak Neo account is logged in, the latest candle of NSE / BSE charts uses Kotak's live price, and the chart header shows "Yahoo + Kotak live". History still comes from Yahoo, because Kotak's API has no past candles (and Zerodha's needs a paid add-on).</td></tr>
+<tr><td>Pivot Points Standard</td><td>New <b>Type</b> setting: Traditional (default, now with R4/R5 and S4/S5), Fibonacci, Woodie, Classic, DeMark, Camarilla, Floor and <b>CPR</b> (Central Pivot Range: TC, Pivot and BC with R1-R3 / S1-S3), calculated the way TradingView does.</td></tr>
+<tr><td>Auto Fibonacci</td><td>Two new indicators under Trend. <b>Auto Fib Retracement</b> finds the latest swing (0 at its end, 1 at its start) and draws 0.236, 0.382, 0.5, 0.618 and 0.786 between. <b>Auto Fib Extension</b> takes the last three swing points A, B, C and projects the A-to-B move from C at 0.618, 1, 1.272, 1.618, 2 and 2.618. Swings use the Zig Zag's Deviation % and Depth; on quiet charts the deviation is lowered automatically until there are enough swings.</td></tr>
 <tr><td>Volume profile (VPVR)</td><td>Its settings (click the gear next to it in the legend) now have <b>Show on</b>: Right or Left side of the chart, and colour pickers for <b>Up volume</b>, <b>Down volume</b> and the <b>POC line</b>.</td></tr>
 <tr><td>Chart numbers</td><td>Every number inside a chart (price axis, legend, indicator values, pivot labels, drawings) uses the stock's price level: <b>2 decimals</b> below ₹150, <b>1 decimal</b> from ₹150 to ₹1,000, <b>none</b> above ₹1,000.</td></tr>
 <tr><td><a href="#keynav">Arrow keys</a></td><td><kbd>↑</kbd> <kbd>↓</kbd> step through the watchlist, screener or broker list you last clicked and open each stock's chart. On/off in Settings.</td></tr>
@@ -485,6 +489,7 @@ a { color: var(--accent); }
 <tr><td>Volume on the price chart</td><td>Show or hide the volume bars at the bottom of the chart.</td></tr>
 <tr><td>After placing a drawing</td><td>Go back to the cursor, or keep the same drawing tool for the next one.</td></tr>
 <tr><td>Crosshair across charts</td><td>Move the crosshair on every chart together, or each on its own.</td></tr>
+<tr><td>Indian chart prices</td><td><b>Yahoo</b>, or <b>Yahoo history + Kotak Neo live price</b> for the latest candle while you're logged in to Kotak Neo.</td></tr>
 <tr><td id="keynav">↑ ↓ keys</td><td><b>Step through the stock list</b> (the default) or <b>Do nothing</b>. See below.</td></tr>
 <tr><td>Chart markers</td><td>Which kinds of events show as markers on daily charts, with each marker's shape and colour (see <a href="#catalysts">Catalyst markers</a>).</td></tr>
 <tr><td>Broker accounts</td><td>Every account in <code>brokers.json</code>: its name, broker, id, and whether it is connected, set up but not logged in, or still missing keys. Add, rename or remove accounts in the file; log in from the Broker tab.</td></tr>
@@ -504,6 +509,7 @@ a { color: var(--accent); }
 <tr><td><code>broker-sessions.json</code></td><td>Today's broker logins (cleared daily)</td></tr>
 <tr><td><code>india-shares.json</code></td><td>Share counts for market caps (refreshed weekly)</td></tr>
 <tr><td><code>icici-scrips.json</code></td><td>ICICI's stock codes and ISINs, to match ICICI holdings to NSE symbols (refreshed daily)</td></tr>
+<tr><td><code>kotak-scrips.json</code></td><td>Kotak Neo's numeric stock codes, for its live prices (refreshed daily)</td></tr>
 <tr><td><code>server.log</code></td><td>The app's log: broker logins, order attempts, GTT triggers and their results</td></tr>
 <tr><td><code>gtt.json</code></td><td>Your GTT orders, their trailing stops and history</td></tr>
 <tr><td><code>imports\</code></td><td>Data files you imported into the strategy tester</td></tr>

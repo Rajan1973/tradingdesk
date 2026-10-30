@@ -79,6 +79,11 @@ test('Bollinger bands use population standard deviation', () => {
 test('every built-in indicator runs on real data and returns full-length series', () => {
   for (const def of I.INDICATORS) {
     const out = I.compute(def.id, bars);
+    // Pivot types each fill some of the levels; every level must come from at least one type.
+    if (def.id === 'pivots')
+      for (const type of I.PIVOT_TYPES)
+        for (const [k, v] of Object.entries(I.compute('pivots', bars, { type })))
+          if (Array.isArray(v) && v.some(Number.isFinite) && !out[k].some(Number.isFinite)) out[k] = v;
     for (const o of def.outputs) {
       assert.ok(Array.isArray(out[o.key]), `${def.id}.${o.key} missing`);
       assert.ok(out[o.key].length >= bars.length, `${def.id}.${o.key} too short`);

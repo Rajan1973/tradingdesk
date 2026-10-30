@@ -724,6 +724,8 @@ const REF = {
   },
   fractals: null, // markers, checked in the Williams fractals test below
   zigzag: null, // checked in the Zig Zag tests below
+  autofib: null, // checked in the auto Fibonacci test below
+  autofibext: null,
   twap: () => ({
     value: bars.map((b) => (b.open + b.high + b.low + b.close) / 4),
   }), // daily bars: every bar is its own day
@@ -1192,4 +1194,33 @@ test("Chande Kroll Stop starts once both of its windows are full", () => {
   const r = compute("cks", bars); // ATR and the 10-bar extreme need 10 bars, the stop needs 9 of those
   assert.equal(r.stopShort.findIndex(ok), 17);
   assert.equal(r.stopLong.findIndex(ok), 17);
+});
+
+test("pivot types: each practice's levels from one previous period (H 110, L 90, C 105, O 95, new open 100)", async () => {
+  const { pivotLevels } = await import("../public/lib/indicators.js");
+  const prev = { h: 110, l: 90, c: 105, o: 95 };
+  const at = (type, k) => Math.round(pivotLevels(type, prev, 100)[k] * 1000) / 1000;
+  assert.equal(at("Traditional", "p"), 101.667);
+  assert.equal(at("Traditional", "r4"), 145);
+  assert.equal(at("Fibonacci", "r1"), 109.307);
+  assert.deepEqual([at("Woodie", "p"), at("Woodie", "r1"), at("Woodie", "s1")], [100, 110, 90]);
+  assert.equal(at("Classic", "r3"), 141.667);
+  assert.deepEqual([at("DeMark", "p"), at("DeMark", "r1"), at("DeMark", "s1")], [103.75, 117.5, 97.5]);
+  assert.deepEqual([at("Camarilla", "r4"), at("Camarilla", "r5"), at("Camarilla", "s5")], [116, 128.333, 81.667]);
+  assert.equal(pivotLevels("Floor", prev, 100).r4, undefined);
+});
+
+test("auto Fibonacci: retracement spans the last swing, extension projects it from the last pivot; CPR brackets the pivot", async () => {
+  const { pivotLevels } = await import("../public/lib/indicators.js");
+  // Up 100 -> 130, down to 115, then a small bounce: swings A=100 (bar 3), B=130 (bar 9), C=115 (bar 15).
+  const path = [104, 102, 101, 100, 106, 112, 118, 124, 128, 130, 126, 122, 119, 117, 116, 115, 117, 118, 119, 119];
+  const b = path.map((c, i) => ({ time: i * 86400, open: c, high: c, low: c, close: c, volume: 1 }));
+  const ret = compute("autofib", b, { deviation: 5, depth: 2 });
+  const n = b.length - 1;
+  assert.deepEqual([ret.f0[n], ret.f1[n], Math.round(ret.f0_5[n] * 100) / 100], [115, 130, 122.5]);
+  const ext = compute("autofibext", b, { deviation: 5, depth: 2 });
+  assert.deepEqual([ext.f0[n], ext.f1[n], Math.round(ext.f1_618[n] * 100) / 100], [115, 145, 163.54]);
+  assert.ok(Number.isNaN(ext.f1[14]) && ext.f1[15] === 145, "extension starts at C");
+  const cpr = pivotLevels("CPR", { h: 110, l: 90, c: 105, o: 95 }, 100);
+  assert.deepEqual([Math.round(cpr.tc * 1000) / 1000, Math.round(cpr.p * 1000) / 1000, cpr.bc], [103.333, 101.667, 100]);
 });

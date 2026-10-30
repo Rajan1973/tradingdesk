@@ -208,6 +208,75 @@ class App {
     if (save) this.persist();
   }
 
+  // ---------- layout templates ----------
+  // A template is the whole chart area: the layout, and each chart's symbol, timeframe, chart type and
+  // indicators with their settings. Kept in state.templates (data/state.json) under the name you give it.
+  openTemplates() {
+    const all = (this.state.templates ||= {});
+    const summary = (t) =>
+      t.panes.map((c) => `${ticker(c.symbol)} ${c.tf}${c.indicators?.length ? ` · ${c.indicators.length} ind.` : ""}`).join(", ");
+    const rows = Object.entries(all)
+      .sort((a, b) => b[1].savedAt - a[1].savedAt)
+      .map(
+        ([name, t]) =>
+          `<tr><td class="l"><b>${esc(name)}</b><div class="hint-text">${esc(summary(t))}</div></td><td class="l muted">${esc($(`#layoutSel option[value="${t.layout}"]`)?.textContent || t.layout)}</td><td class="muted">${new Date(t.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</td><td><button class="btn small primary" data-load="${esc(name)}">Open</button> <button class="btn small" data-del="${esc(name)}" title="Delete">×</button></td></tr>`,
+      )
+      .join("");
+    const card = this.modal(
+      "Layouts",
+      `<div class="row-flex"><input id="tplName" class="search-in" style="flex:1" placeholder="Name for the current layout, e.g. Morning scan" autocomplete="off"><button class="btn primary" id="tplSave">Save current</button></div>
+      <p class="hint-text">Saves the ${this.panes.length} chart${this.panes.length === 1 ? "" : "s"} on screen with their stocks, timeframes, chart types and indicators. Saving with an existing name replaces it.</p>
+      ${rows ? `<table class="t"><thead><tr><th class="l">Saved layout</th><th class="l">Charts</th><th>Saved</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : '<p class="hint-text">No saved layouts yet.</p>'}`,
+      { wide: true },
+    );
+    const name = card.querySelector("#tplName");
+    const save = () => {
+      // The browser's own prompt is the fallback when the name box can't be typed in.
+      const n = (name.value.trim() || prompt("Name for this layout:", "") || "").trim();
+      if (!n) return;
+      if (all[n] && !confirm(`Replace the saved layout "${n}"?`)) return;
+      try {
+        // A JSON copy, the same form the app saves state in, so nothing live is carried along.
+        all[n] = { layout: this.state.layout, active: this.panes.indexOf(this.active), panes: JSON.parse(JSON.stringify(this.panes.map((p) => p.cfg))), savedAt: Date.now() };
+      } catch (e) {
+        return this.toast(`Couldn't save the layout: ${e.message}`, "err");
+      }
+      this.persist();
+      this.toast(`Saved layout "${n}".`);
+      this.openTemplates();
+    };
+    card.querySelector("#tplSave").onclick = save;
+    // A block body: an on-handler returning false cancels the key, which stopped typing in the box.
+    name.onkeydown = (e) => {
+      if (e.key === "Enter") save();
+    };
+    card.querySelectorAll("[data-load]").forEach((b) => (b.onclick = () => this.loadTemplate(b.dataset.load)));
+    // Clicks anywhere in the window keep the name box usable (and a stray chart key handler away from it).
+    name.onmousedown = (e) => e.stopPropagation();
+    card.querySelectorAll("[data-del]").forEach(
+      (b) =>
+        (b.onclick = () => {
+          if (!confirm(`Delete the saved layout "${b.dataset.del}"?`)) return;
+          delete all[b.dataset.del];
+          this.persist();
+          this.openTemplates();
+        }),
+    );
+    setTimeout(() => name.focus(), 0);
+  }
+
+  loadTemplate(n) {
+    const t = this.state.templates?.[n];
+    if (!t) return;
+    this.closeModal();
+    while (this.panes.length) this.panes.pop().destroy();
+    this.active = null;
+    this.state.panes = JSON.parse(JSON.stringify(t.panes));
+    this.state.active = t.active ?? 0;
+    this.setLayout(t.layout);
+    this.toast(`Opened layout "${n}".`);
+  }
+
   setActive(pane) {
     if (!pane || this.active === pane) return;
     this.active?.el.classList.remove("active");
@@ -270,6 +339,7 @@ class App {
         "Compare with…",
       );
     $("#layoutSel").onchange = (e) => this.setLayout(e.target.value);
+    $("#templatesBtn").onclick = () => this.openTemplates();
     $("#syncSymbol").checked = !!this.settings.syncSymbol;
     $("#syncSymbol").onchange = (e) => {
       this.settings.syncSymbol = e.target.checked;
@@ -678,6 +748,7 @@ class App {
       <label class="field">Time axis<select id="sUtc"><option value="0" ${!s.utc ? "selected" : ""}>My local time</option><option value="1" ${s.utc ? "selected" : ""}>UTC</option></select></label>
       <label class="field">Volume on the price chart<select id="sVol"><option value="1" ${s.volume ? "selected" : ""}>Show</option><option value="0" ${!s.volume ? "selected" : ""}>Hide</option></select></label>
       <label class="field">After placing a drawing<select id="sStay"><option value="0" ${!s.stayInDrawMode ? "selected" : ""}>Back to cursor</option><option value="1" ${s.stayInDrawMode ? "selected" : ""}>Keep the tool</option></select></label>
+      <label class="field">Indian chart prices<select id="sFeed"><option value="yahoo" ${s.chartFeed !== "kotak" ? "selected" : ""}>Yahoo</option><option value="kotak" ${s.chartFeed === "kotak" ? "selected" : ""}>Yahoo history + Kotak Neo live price</option></select></label>
       <label class="field">↑ ↓ keys<select id="sKeyNav"><option value="1" ${s.keyNav !== false ? "selected" : ""}>Step through the stock list</option><option value="0" ${s.keyNav === false ? "selected" : ""}>Do nothing</option></select></label>
       <label class="field">Crosshair across charts<select id="sSync"><option value="0" ${!s.syncCrosshair ? "selected" : ""}>Independent</option><option value="1" ${s.syncCrosshair ? "selected" : ""}>Synced</option></select></label>
     </div>
@@ -713,6 +784,7 @@ class App {
         stayInDrawMode: $("#sStay").value === "1",
         syncCrosshair: $("#sSync").value === "1",
         keyNav: $("#sKeyNav").value === "1",
+        chartFeed: $("#sFeed").value,
       });
       this.closeModal();
       this.persist();

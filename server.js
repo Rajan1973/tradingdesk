@@ -22,8 +22,25 @@ import * as catalysts from "./lib/catalysts.js";
 import { registerIndicator, INDICATORS } from "./public/lib/indicators.js";
 import { conditionFn, backtest, magnifierTf } from "./public/lib/backtest.js";
 import { quantChecks } from "./public/lib/quant.js";
-import { parseTf } from "./public/lib/series.js";
+import { parseTf, bucketStart, isIntraday } from "./public/lib/series.js";
 import { relaunchForProxy, proxyNote } from "./lib/proxy.js";
+
+// Settings → Chart prices = "Kotak live": while the market is open, the latest candle of an NSE / BSE
+// chart takes Kotak Neo's live price (history stays Yahoo's). A new candle starts if Yahoo hasn't
+// sent the current one yet. Without a Kotak login, or on any error, the chart is Yahoo's as before.
+async function withBrokerPrice(r) {
+  if (store.read("state", {}).settings?.chartFeed !== "kotak" || !gtt.marketOpen() || !r.candles?.length) return r;
+  const ltp = await brokers.kotakLtp(r.symbol).catch(() => null);
+  if (!ltp) return r;
+  const candles = r.candles.slice(),
+    last = candles.at(-1),
+    cur = bucketStart(Math.floor(Date.now() / 1000), r.tf);
+  if (bucketStart(last.time, r.tf) === cur)
+    candles[candles.length - 1] = { ...last, close: ltp, high: Math.max(last.high, ltp), low: Math.min(last.low, ltp) };
+  else if (isIntraday(r.tf) && cur > last.time) candles.push({ time: cur, open: ltp, high: ltp, low: ltp, close: ltp, volume: 0 });
+  else return r;
+  return { ...r, candles, provider: `${r.provider} + Kotak live` };
+}
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PUBLIC = path.join(ROOT, "public");
@@ -262,11 +279,7 @@ async function handle(req, res) {
       return send(res, 200, await (q.market === "india" ? data.searchIndia(q.q) : data.search(q.q)));
     if (p === "/api/spread") return send(res, 200, await data.getSpread(q.symbol));
     if (p === "/api/candles")
-      return send(
-        res,
-        200,
-        await data.getCandles(q.symbol, q.tf || "1D", q.limit),
-      );
+      return send(res, 200, await withBrokerPrice(await data.getCandles(q.symbol, q.tf || "1D", q.limit)));
     if (p === "/api/quotes")
       return send(
         res,

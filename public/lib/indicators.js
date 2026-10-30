@@ -604,6 +604,29 @@ function maDef(id, name, fn, extraInputs = []) {
   };
 }
 
+const FIB_RET = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+const FIB_EXT = [0, 0.618, 1, 1.272, 1.618, 2, 2.618];
+const fibKey = (r) => `f${String(r).replace(".", "_")}`;
+function autoFib(bars, p, ext) {
+  const ratios = ext ? FIB_EXT : FIB_RET;
+  const out = Object.fromEntries(ratios.map((r) => [fibKey(r), new Array(bars.length).fill(N)]));
+  const need = ext ? 3 : 2;
+  // Quiet charts (short intraday ranges) may not swing by the full deviation; halve it until there are enough swings.
+  let dev = p.deviation,
+    piv = zigzagPivots(bars, dev, p.depth);
+  while (piv.length < need && dev > 0.25) piv = zigzagPivots(bars, (dev /= 2), p.depth);
+  if (piv.length < need) return out;
+  const [a, b, c] = piv.slice(-need);
+  const from = ext ? c.i : a.i;
+  for (const r of ratios) {
+    const v = ext ? c.price + (b.price - a.price) * r : b.price + (a.price - b.price) * r;
+    out[fibKey(r)].fill(v, from);
+  }
+  return out;
+}
+const fibLines = (ratios) =>
+  ratios.map((r, k) => line(fibKey(r), String(r), ["#787b86", "#f23645", "#ff9800", "#4caf50", "#089981", "#00bcd4", "#2962ff"][k % 7], { lineWidth: 1 }));
+export const PIVOT_TYPES = ["Traditional", "Fibonacci", "Woodie", "Classic", "DeMark", "Camarilla", "Floor", "CPR"];
 export const INDICATORS = [
   maDef("sma", "Moving Average (SMA)", (s, n) => sma(s, n)),
   maDef("ema", "Exponential Moving Average (EMA)", (s, n) => ema(s, n)),
@@ -2032,6 +2055,13 @@ export const INDICATORS = [
     overlay: true,
     inputs: [
       {
+        key: "type",
+        label: "Type",
+        type: "select",
+        options: PIVOT_TYPES,
+        default: "Traditional",
+      },
+      {
         key: "period",
         label: "Pivot period",
         type: "select",
@@ -2040,15 +2070,21 @@ export const INDICATORS = [
       },
     ],
     outputs: [
+      line("r5", "R5", "#ef5350", { lineWidth: 1 }),
+      line("r4", "R4", "#ef5350", { lineWidth: 1 }),
       line("r3", "R3", "#ef5350", { lineWidth: 1 }),
       line("r2", "R2", "#ef5350", { lineWidth: 1 }),
       line("r1", "R1", "#ef5350", { lineWidth: 1 }),
+      line("tc", "TC", "#2962ff", { lineWidth: 1 }),
       line("p", "P", "#ff9800", { lineWidth: 1 }),
+      line("bc", "BC", "#2962ff", { lineWidth: 1 }),
       line("s1", "S1", "#26a69a", { lineWidth: 1 }),
       line("s2", "S2", "#26a69a", { lineWidth: 1 }),
       line("s3", "S3", "#26a69a", { lineWidth: 1 }),
+      line("s4", "S4", "#26a69a", { lineWidth: 1 }),
+      line("s5", "S5", "#26a69a", { lineWidth: 1 }),
     ],
-    calc: (bars, p) => pivotsOf(bars, p.period),
+    calc: (bars, p) => pivotsOf(bars, p.period, p.type),
   },
   {
     id: "pdhl",
@@ -2107,6 +2143,32 @@ export const INDICATORS = [
     ],
     outputs: [],
     calc: (bars, p) => ({ markers: pivotMarkers(bars, p.left, p.right) }),
+  },
+  {
+    id: "autofib",
+    name: "Auto Fib Retracement",
+    noAutoscale: true,
+    group: "Trend",
+    overlay: true,
+    inputs: [
+      { key: "deviation", label: "Deviation (%)", type: "float", default: 5 },
+      { key: "depth", label: "Depth", type: "int", default: 10 },
+    ],
+    outputs: fibLines(FIB_RET),
+    calc: (bars, p) => autoFib(bars, p, false),
+  },
+  {
+    id: "autofibext",
+    name: "Auto Fib Extension",
+    noAutoscale: true,
+    group: "Trend",
+    overlay: true,
+    inputs: [
+      { key: "deviation", label: "Deviation (%)", type: "float", default: 5 },
+      { key: "depth", label: "Depth", type: "int", default: 10 },
+    ],
+    outputs: fibLines(FIB_EXT),
+    calc: (bars, p) => autoFib(bars, p, true),
   },
   {
     id: "zigzag",
@@ -2668,8 +2730,21 @@ function vstopOf(bars, length, factor) {
 // price before that happens means the pivot was not the end of its swing, so it moves to the new extreme.
 // The line runs straight between pivots and the unconfirmed last leg ends at its latest extreme.
 function zigzagOf(bars, deviation, depth) {
+  const out = new Array(bars.length).fill(N);
+  const piv = zigzagPivots(bars, deviation, depth);
+  piv.forEach((a, k) => {
+    out[a.i] = a.price;
+    const b = piv[k + 1];
+    if (b)
+      for (let i = a.i + 1; i < b.i; i++)
+        out[i] = a.price + ((b.price - a.price) * (i - a.i)) / (b.i - a.i);
+  });
+  return out;
+}
+
+// Swing points [{ i, price }], alternating high and low; the last one is the current leg's extreme so far.
+function zigzagPivots(bars, deviation, depth) {
   const n = bars.length,
-    out = new Array(n).fill(N),
     dev = deviation / 100,
     piv = []; // confirmed pivots { i, price }, alternating high and low
   let dir = 0, // 0 no leg yet, 1 rising (tracking the high), -1 falling (tracking the low)
@@ -2718,17 +2793,58 @@ function zigzagOf(bars, deviation, depth) {
       i: ext,
       price: dir === 1 ? bars[ext].high : bars[ext].low,
     });
-  piv.forEach((a, k) => {
-    out[a.i] = a.price;
-    const b = piv[k + 1];
-    if (b)
-      for (let i = a.i + 1; i < b.i; i++)
-        out[i] = a.price + ((b.price - a.price) * (i - a.i)) / (b.i - a.i);
-  });
-  return out;
+  return piv;
 }
 
-function pivotsOf(bars, period) {
+// Auto Fibonacci levels drawn from the start of the latest swing to the last bar.
+// Retracement: last two swing points A -> B; 0 sits at B, 1 at A. Extension: last three A -> B -> C;
+// levels project the A-B move from C (1 = C plus the whole A-B move).
+
+// Pivot levels from the previous period's high, low, close (and opens), as TradingView's "Pivot Points
+// Standard" defines each type. Levels a type doesn't have are left out (NaN).
+export function pivotLevels(type, { h, l, c, o }, curOpen) {
+  const r = h - l;
+  if (type === "Fibonacci") {
+    const p = (h + l + c) / 3;
+    return { p, r1: p + 0.382 * r, s1: p - 0.382 * r, r2: p + 0.618 * r, s2: p - 0.618 * r, r3: p + r, s3: p - r };
+  }
+  if (type === "Woodie") {
+    const p = (h + l + 2 * curOpen) / 4;
+    const r3 = h + 2 * (p - l), s3 = l - 2 * (h - p);
+    return { p, r1: 2 * p - l, s1: 2 * p - h, r2: p + r, s2: p - r, r3, s3, r4: r3 + r, s4: s3 - r };
+  }
+  if (type === "Classic") {
+    const p = (h + l + c) / 3;
+    return { p, r1: 2 * p - l, s1: 2 * p - h, r2: p + r, s2: p - r, r3: p + 2 * r, s3: p - 2 * r, r4: p + 3 * r, s4: p - 3 * r };
+  }
+  if (type === "DeMark") {
+    const x = c < o ? h + 2 * l + c : c > o ? 2 * h + l + c : h + l + 2 * c;
+    return { p: x / 4, r1: x / 2 - l, s1: x / 2 - h };
+  }
+  if (type === "Camarilla") {
+    const r5 = (h / l) * c;
+    return {
+      p: (h + l + c) / 3,
+      r1: c + (1.1 * r) / 12, s1: c - (1.1 * r) / 12,
+      r2: c + (1.1 * r) / 6, s2: c - (1.1 * r) / 6,
+      r3: c + (1.1 * r) / 4, s3: c - (1.1 * r) / 4,
+      r4: c + (1.1 * r) / 2, s4: c - (1.1 * r) / 2,
+      r5, s5: c - (r5 - c),
+    };
+  }
+  const p = (h + l + c) / 3;
+  const lv = { p, r1: 2 * p - l, s1: 2 * p - h, r2: p + r, s2: p - r, r3: h + 2 * (p - l), s3: l - 2 * (h - p) };
+  if (type === "Floor") return lv;
+  // Central Pivot Range: the pivot with its top and bottom central levels, plus floor R1-R3 / S1-S3.
+  if (type === "CPR") {
+    const bc = (h + l) / 2, tc = 2 * p - bc;
+    return { ...lv, tc: Math.max(tc, bc), bc: Math.min(tc, bc) };
+  }
+  // Traditional
+  return { ...lv, r4: p * 3 + (h - 3 * l), s4: p * 3 - (3 * h - l), r5: p * 4 + (h - 4 * l), s5: p * 4 - (4 * h - l) };
+}
+
+function pivotsOf(bars, period, type = "Traditional") {
   let per = period;
   if (per === "auto") {
     const step = bars.length > 1 ? bars[1].time - bars[0].time : 86400;
@@ -2741,7 +2857,7 @@ function pivotsOf(bars, period) {
             ? "month"
             : "year";
   }
-  const keys = ["p", "r1", "s1", "r2", "s2", "r3", "s3"];
+  const keys = ["p", "r1", "s1", "r2", "s2", "r3", "s3", "r4", "s4", "r5", "s5", "tc", "bc"];
   const out = Object.fromEntries(
     keys.map((k) => [k, new Array(bars.length).fill(N)]),
   );
@@ -2753,7 +2869,7 @@ function pivotsOf(bars, period) {
     const k = periodKey(b.time, per);
     if (k !== key) {
       if (cur) prev = cur;
-      cur = { h: b.high, l: b.low, c: b.close };
+      cur = { h: b.high, l: b.low, c: b.close, o: b.open };
       key = k;
       colorsBreak[i] = true;
     } else {
@@ -2761,16 +2877,7 @@ function pivotsOf(bars, period) {
       cur.l = Math.min(cur.l, b.low);
       cur.c = b.close;
     }
-    if (prev) {
-      const P = (prev.h + prev.l + prev.c) / 3;
-      out.p[i] = P;
-      out.r1[i] = 2 * P - prev.l;
-      out.s1[i] = 2 * P - prev.h;
-      out.r2[i] = P + (prev.h - prev.l);
-      out.s2[i] = P - (prev.h - prev.l);
-      out.r3[i] = prev.h + 2 * (P - prev.l);
-      out.s3[i] = prev.l - 2 * (prev.h - P);
-    }
+    if (prev) for (const [k, v] of Object.entries(pivotLevels(type, prev, cur.o))) out[k][i] = v;
   });
   return { ...out, breaks: colorsBreak };
 }
