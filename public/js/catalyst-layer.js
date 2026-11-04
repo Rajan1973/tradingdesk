@@ -89,3 +89,68 @@ export class CatalystLayer {
     return best;
   }
 }
+
+// Pivot high / low markers: a tiny dot just off the wick tip with its price beyond it. Drawn here
+// because the chart library won't draw a marker circle smaller than about 10 pixels.
+const PIVOT_R = 1.5;
+const PIVOT_GAP = 4; // pixels between the wick tip and the dot
+const LABEL_H = 14;
+
+export class PivotLayer {
+  constructor(pane) {
+    this.pane = pane;
+    this.pivots = [];
+    this._view = {
+      zOrder: () => "top",
+      renderer: () => ({
+        draw: (target) => target.useMediaCoordinateSpace(({ context }) => this.draw(context)),
+      }),
+    };
+  }
+
+  attached({ series, requestUpdate }) {
+    this.series = series;
+    this.requestUpdate = requestUpdate;
+  }
+  detached() {
+    this.series = null;
+  }
+  updateAllViews() {}
+  paneViews() {
+    return [this._view];
+  }
+  set(pivots) {
+    this.pivots = pivots;
+    this.requestUpdate?.();
+  }
+
+  // Keeps the price labels on screen when the pivot is the chart's highest or lowest bar.
+  autoscaleInfo() {
+    if (!this.pivots.length) return null;
+    const room = PIVOT_GAP + 2 * PIVOT_R + LABEL_H + 2;
+    return { priceRange: null, margins: { above: room, below: room } };
+  }
+
+  draw(ctx) {
+    if (!this.series) return;
+    const pane = this.pane;
+    ctx.font = `11px ${pane.chart.options().layout.fontFamily}`;
+    ctx.textAlign = "center";
+    for (const m of this.pivots) {
+      const x = pane.timeToX(m.utc);
+      const tip = this.series.priceToCoordinate(m.dot);
+      if (x == null || tip == null) continue;
+      const up = m.position === "aboveBar";
+      const y = up ? tip - PIVOT_GAP - PIVOT_R : tip + PIVOT_GAP + PIVOT_R;
+      ctx.fillStyle = m.color;
+      ctx.beginPath();
+      ctx.arc(x, y, PIVOT_R, 0, Math.PI * 2);
+      ctx.fill();
+      // A high's label clears any catalyst dots stacked on the same bar.
+      const events = up ? pane.catalystAt?.get(m.utc)?.length || 0 : 0;
+      const clear = events ? GAP + R + (events - 1) * STACK : PIVOT_GAP + 2 * PIVOT_R;
+      ctx.textBaseline = up ? "bottom" : "top";
+      ctx.fillText(m.text, x, up ? tip - clear - 2 : tip + clear + 2);
+    }
+  }
+}

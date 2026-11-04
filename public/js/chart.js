@@ -13,7 +13,7 @@ import {
 } from "../lib/series.js";
 import { DrawingLayer, TOOL_BY_ID } from "./drawings.js";
 import { VolumeProfile, SessionVolumeProfile } from "./volume-profile.js";
-import { CatalystLayer } from "./catalyst-layer.js";
+import { CatalystLayer, PivotLayer } from "./catalyst-layer.js";
 import { markerType } from "../lib/marker-types.js";
 
 const LW = window.LightweightCharts;
@@ -380,6 +380,8 @@ export class ChartPane {
     this.main.attachPrimitive(this.drawings);
     this.catLayer = new CatalystLayer(this);
     this.main.attachPrimitive(this.catLayer);
+    this.pivotLayer = new PivotLayer(this);
+    this.main.attachPrimitive(this.pivotLayer);
     this.markers = LW.createSeriesMarkers(this.main, []);
     this.mainType = t;
     if (
@@ -810,10 +812,11 @@ export class ChartPane {
     this.buildCatalysts();
     this.catLayer?.update();
     const all = [...this.indMarkers, ...this.extraMarkers]
-      .map((m) => ({ ...m, time: this.toChart(m.time) }))
+      .map((m) => ({ ...m, utc: m.time, time: this.toChart(m.time) }))
       .filter((m) => !this.replay || m.time <= this.times.at(-1));
     all.sort((x, y) => x.time - y.time);
-    this.markers.setMarkers(all);
+    this.pivotLayer?.set(all.filter((m) => m.dot != null));
+    this.markers.setMarkers(all.filter((m) => m.dot == null));
   }
 
   // ---------- countdown to the next bar (intraday only) ----------

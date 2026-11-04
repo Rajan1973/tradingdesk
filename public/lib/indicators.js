@@ -490,6 +490,7 @@ function pivotMarkers(bars, left, right) {
         shape: "circle",
         color: "#ef5350",
         text: String(b.high),
+        dot: b.high,
       });
     if (isLow)
       markers.push({
@@ -498,6 +499,7 @@ function pivotMarkers(bars, left, right) {
         shape: "circle",
         color: "#26a69a",
         text: String(b.low),
+        dot: b.low,
       });
   }
   return markers;
