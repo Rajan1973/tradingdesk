@@ -978,8 +978,11 @@ export class ChartPane {
       prev = this.shown[i - 1];
     const chg = b && prev ? ((b.close - prev.close) / prev.close) * 100 : null;
     const cls = chg == null ? "" : chg >= 0 ? "up" : "down";
-    const name = `${ticker(this.cfg.symbol)} · ${this.cfg.tf} · ${this.provider || exchange(this.cfg.symbol)}`;
-    let html = `<div class="row"><span class="title" data-act="symbol">${esc(name)}</span>`;
+    const name = `${ticker(this.cfg.symbol)} · ${this.cfg.tf}`;
+    // Where the latest price comes from, so it's clear when a broker's live feed is in use.
+    const live = /Kotak live/.test(this.provider || "");
+    const source = live ? "● Kotak live" : this.provider || exchange(this.cfg.symbol);
+    let html = `<div class="row"><span class="title" data-act="symbol">${esc(name)}</span><span class="src ${live ? "live" : ""}">${esc(source)}</span>`;
     if (b)
       html += `<span class="ohlc ${cls}"><span><b>O</b>${this.formatPrice(b.open)}</span><span><b>H</b>${this.formatPrice(b.high)}</span><span><b>L</b>${this.formatPrice(b.low)}</span><span><b>C</b>${this.formatPrice(b.close)}</span><span>${fmtPct(chg)}</span></span>`;
     html += "</div>";
@@ -1229,6 +1232,11 @@ export class ChartPane {
       try {
         const r = await api.candles(this.cfg.symbol, this.cfg.tf, 5);
         this.merge(r.candles);
+        // The source can change while a chart is open (login, logout, market open or close).
+        if (r.provider !== this.provider) {
+          this.provider = r.provider;
+          this.updateLegend();
+        }
       } catch {
         /* keep trying */
       }
