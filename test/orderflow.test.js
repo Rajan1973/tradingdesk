@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { flow, toRow } from "../lib/orderflow.js";
 import { parseTrade } from "../lib/cryptoflow.js";
-import { addTrade, mergeBars, totals, imbalances } from "../public/lib/footprint.js";
+import { addTrade, mergeBars, totals, imbalances, sessionDelta, divergence } from "../public/lib/footprint.js";
 import { buildProfile, sessionProfiles, niceStep, profileOptions } from "../public/lib/market-profile.js";
 import { LAYOUTS, cells } from "../public/js/layouts.js";
 
@@ -131,4 +131,23 @@ test("every layout is a set of whole rectangles that fill the grid", () => {
   for (const old of ["1", "2v", "2h", "3", "4", "6", "8", "16"]) assert.ok(ids.has(old), `saved layout ${old} must keep working`);
   const count = (n) => LAYOUTS.filter((l) => l.count === n).length;
   assert.deepEqual([1, 2, 3, 4, 5, 6].map(count), [1, 2, 6, 13, 12, 10]);
+});
+
+test("delta divergence needs a new extreme, a matching close and the opposite delta", () => {
+  const bar = (o, h, l, c, buy, sell) => ({ o, h, l, c, cells: { 100: [buy, sell] } });
+  const flat = Array.from({ length: 5 }, () => bar(100, 101, 99, 100, 1, 1));
+  const at = (b, lead = flat) => divergence([...lead, b], lead.length);
+  assert.equal(at(bar(100, 102, 99, 101, 1, 3)), "bear");
+  assert.equal(at(bar(100, 101, 98, 99, 3, 1)), "bull");
+  assert.equal(at(bar(100, 102, 99, 101, 3, 1)), null); // buying agrees with the rise
+  assert.equal(at(bar(100, 100.5, 99, 100.2, 1, 3)), null); // no new high
+  assert.equal(at(bar(100, 102, 99, 100, 1, 3)), null); // no up close
+  assert.equal(at(bar(100, 102, 99, 101, 1, 3), flat.slice(1)), null); // not enough bars before it
+});
+
+test("session delta adds up only the newest bar's UTC day", () => {
+  const day = 864e5;
+  const bar = (at, buy, sell) => ({ at, cells: { 100: [buy, sell] } });
+  assert.equal(sessionDelta([]), 0);
+  assert.equal(sessionDelta([bar(day - 6e4, 50, 0), bar(day, 3, 1), bar(day + 6e4, 1, 4)]), -1);
 });

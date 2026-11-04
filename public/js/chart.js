@@ -1012,8 +1012,8 @@ export class ChartPane {
     const cls = chg == null ? "" : chg >= 0 ? "up" : "down";
     const name = `${ticker(this.cfg.symbol)} · ${this.cfg.tf}`;
     // Where the latest price comes from, so it's clear when a broker's live feed is in use.
-    const live = /Kotak live/.test(this.provider || "");
-    const source = live ? "● Kotak live" : this.provider || exchange(this.cfg.symbol);
+    const live = /(Kotak|Upstox) live/.exec(this.provider || "");
+    const source = live ? `● ${live[1]} live` : this.provider || exchange(this.cfg.symbol);
     let html = `<div class="row"><span class="title" data-act="symbol">${esc(name)}</span><span class="src ${live ? "live" : ""}">${esc(source)}</span>`;
     if (b)
       html += `<span class="ohlc ${cls}"><span><b>O</b>${this.formatPrice(b.open)}</span><span><b>H</b>${this.formatPrice(b.high)}</span><span><b>L</b>${this.formatPrice(b.low)}</span><span><b>C</b>${this.formatPrice(b.close)}</span><span>${fmtPct(chg)}</span></span>`;

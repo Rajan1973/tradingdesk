@@ -777,7 +777,9 @@ class App {
       <label class="field">Time axis<select id="sUtc"><option value="0" ${!s.utc ? "selected" : ""}>My local time</option><option value="1" ${s.utc ? "selected" : ""}>UTC</option></select></label>
       <label class="field">Volume on the price chart<select id="sVol"><option value="1" ${s.volume ? "selected" : ""}>Show</option><option value="0" ${!s.volume ? "selected" : ""}>Hide</option></select></label>
       <label class="field">After placing a drawing<select id="sStay"><option value="0" ${!s.stayInDrawMode ? "selected" : ""}>Back to cursor</option><option value="1" ${s.stayInDrawMode ? "selected" : ""}>Keep the tool</option></select></label>
-      <label class="field">Indian chart prices<select id="sFeed"><option value="yahoo" ${s.chartFeed !== "kotak" ? "selected" : ""}>Yahoo</option><option value="kotak" ${s.chartFeed === "kotak" ? "selected" : ""}>Yahoo history + Kotak Neo live price</option></select></label>
+      <label class="field">Indian chart prices<select id="sFeed"><option value="yahoo" ${!["kotak", "upstox"].includes(s.chartFeed) ? "selected" : ""}>Yahoo</option><option value="kotak" ${s.chartFeed === "kotak" ? "selected" : ""}>Yahoo history + Kotak Neo live price</option><option value="upstox" ${s.chartFeed === "upstox" ? "selected" : ""}>Upstox history + Upstox live price</option></select></label>
+      <label class="field">Upstox read-only token<input id="sUpToken" type="password" autocomplete="off" placeholder="Paste the Analytics Token"></label>
+      <div class="field">&nbsp;<div class="row-flex" style="align-items:center"><button class="btn small" id="sUpSave" type="button">Test and save</button><button class="btn small" id="sUpClear" type="button">Remove</button><span class="hint-text" id="sUpState" role="status"></span></div></div>
       <label class="field">↑ ↓ keys<select id="sKeyNav"><option value="1" ${s.keyNav !== false ? "selected" : ""}>Step through the stock list</option><option value="0" ${s.keyNav === false ? "selected" : ""}>Do nothing</option></select></label>
       <label class="field">Crosshair across charts<select id="sSync"><option value="0" ${!s.syncCrosshair ? "selected" : ""}>Independent</option><option value="1" ${s.syncCrosshair ? "selected" : ""}>Synced</option></select></label>
     </div>
@@ -804,6 +806,28 @@ class App {
     card.querySelectorAll("[data-mk]").forEach(
       (b) => (b.onclick = () => card.querySelectorAll("[data-mt]").forEach((c) => (c.checked = b.dataset.mk === "all"))),
     );
+    const upState = card.querySelector("#sUpState");
+    const showUpstox = async () => {
+      const u = await api.get("/api/upstox/status");
+      upState.textContent = u.error || (!u.hasToken ? "No token saved." : u.connected ? `Live feed connected, ${u.symbols} symbols.` : "Token saved. The live feed runs in market hours.");
+    };
+    showUpstox().catch(() => {});
+    const sendToken = async (token) => {
+      upState.textContent = "Testing…";
+      try {
+        const r = await api.post("/api/upstox/token", { token });
+        upState.textContent = r.removed ? "Token removed." : `Working: Upstox's Nifty 50 price is ${r.ltp}. Token saved.`;
+      } catch (e) {
+        upState.textContent = e.message;
+      }
+      card.querySelector("#sUpToken").value = "";
+    };
+    card.querySelector("#sUpSave").onclick = () => {
+      const token = card.querySelector("#sUpToken").value.trim();
+      if (token) sendToken(token);
+      else upState.textContent = "Paste the token first.";
+    };
+    card.querySelector("#sUpClear").onclick = () => sendToken("");
     card.querySelector("[data-ok]").onclick = () => {
       Object.assign(s, {
         markerHidden: [...card.querySelectorAll("[data-mt]")].filter((c) => !c.checked).map((c) => c.dataset.mt),

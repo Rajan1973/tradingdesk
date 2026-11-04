@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node server.js --open",
     "serve": "node server.js",
-    "test": "node --test test/indicators.test.js test/reference.test.js test/providers.test.js test/feeds.test.js test/series.test.js test/backtest.test.js test/server.test.js test/imports.test.js test/quant.test.js test/gtt.test.js test/orderflow.test.js",
+    "test": "node --test test/indicators.test.js test/reference.test.js test/providers.test.js test/feeds.test.js test/series.test.js test/backtest.test.js test/server.test.js test/imports.test.js test/quant.test.js test/gtt.test.js test/orderflow.test.js test/upstox.test.js",
     "test:live": "node --test test/live.test.js",
     "doctor": "node scripts/doctor.js",
     "compare": "node scripts/compare.js",

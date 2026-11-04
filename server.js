@@ -20,28 +20,40 @@ import * as brokers from "./lib/brokers.js";
 import * as gtt from "./lib/gtt.js";
 import * as orderflow from "./lib/orderflow.js";
 import * as cryptoflow from "./lib/cryptoflow.js";
+import * as upstox from "./lib/upstox.js";
 import * as catalysts from "./lib/catalysts.js";
 import { registerIndicator, INDICATORS } from "./public/lib/indicators.js";
 import { conditionFn, backtest, magnifierTf } from "./public/lib/backtest.js";
 import { quantChecks } from "./public/lib/quant.js";
-import { parseTf, bucketStart, isIntraday } from "./public/lib/series.js";
+import { parseTf, applyLivePrice } from "./public/lib/series.js";
 import { relaunchForProxy, proxyNote } from "./lib/proxy.js";
 
-// Settings → Chart prices = "Kotak live": while the market is open, the latest candle of an NSE / BSE
-// chart takes Kotak Neo's live price (history stays Yahoo's). A new candle starts if Yahoo hasn't
-// sent the current one yet. Without a Kotak login, or on any error, the chart is Yahoo's as before.
+// Settings → Indian chart prices. "Kotak live": while the market is open, the latest candle takes
+// Kotak Neo's live price. "Upstox": history and today's bars come from Upstox, and the latest candle
+// takes its live price. Without a login or token, on any error, or for a chart Upstox doesn't cover,
+// the chart is Yahoo's as before.
+const chartFeed = () => store.read("state", {}).settings?.chartFeed;
+let upstoxError = "";
+
+async function chartCandles(symbol, tf, limit) {
+  if (chartFeed() === "upstox") {
+    try {
+      const r = await upstox.candles((await data.resolve(symbol)).id, tf, limit);
+      if (r) return upstox.fillMissingDays(r, await data.getCandles(symbol, tf, limit).catch(() => null));
+    } catch (e) {
+      if (e.message !== upstoxError) console.error(`[upstox] ${new Date().toISOString()} ${e.message}`);
+      upstoxError = e.message;
+    }
+  }
+  return data.getCandles(symbol, tf, limit);
+}
+
 async function withBrokerPrice(r) {
-  if (store.read("state", {}).settings?.chartFeed !== "kotak" || !gtt.marketOpen() || !r.candles?.length) return r;
-  const ltp = await brokers.kotakLtp(r.symbol).catch(() => null);
-  if (!ltp) return r;
-  const candles = r.candles.slice(),
-    last = candles.at(-1),
-    cur = bucketStart(Math.floor(Date.now() / 1000), r.tf);
-  if (bucketStart(last.time, r.tf) === cur)
-    candles[candles.length - 1] = { ...last, close: ltp, high: Math.max(last.high, ltp), low: Math.min(last.low, ltp) };
-  else if (isIntraday(r.tf) && cur > last.time) candles.push({ time: cur, open: ltp, high: ltp, low: ltp, close: ltp, volume: 0 });
-  else return r;
-  return { ...r, candles, provider: `${r.provider} + Kotak live` };
+  const source = { kotak: ["Kotak", brokers.kotakLtp], upstox: ["Upstox", upstox.livePrice] }[chartFeed()];
+  if (!source || !gtt.marketOpen() || !r.candles?.length) return r;
+  const ltp = await source[1](r.symbol).catch(() => null);
+  const candles = ltp && applyLivePrice(r.candles, r.tf, ltp);
+  return candles ? { ...r, candles, provider: `${r.provider} + ${source[0]} live` } : r;
 }
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -281,7 +293,7 @@ async function handle(req, res) {
       return send(res, 200, await (q.market === "india" ? data.searchIndia(q.q) : data.search(q.q)));
     if (p === "/api/spread") return send(res, 200, await data.getSpread(q.symbol));
     if (p === "/api/candles")
-      return send(res, 200, await withBrokerPrice(await data.getCandles(q.symbol, q.tf || "1D", q.limit)));
+      return send(res, 200, await withBrokerPrice(await chartCandles(q.symbol, q.tf || "1D", q.limit)));
     if (p === "/api/quotes")
       return send(
         res,
@@ -428,6 +440,19 @@ async function handle(req, res) {
     if (p === "/api/catalysts") return send(res, 200, await catalysts.forSymbol(q.symbol));
     if (p === "/api/catalysts/all") return send(res, 200, await catalysts.all());
     // GTT orders: only from this computer, like the broker accounts they place orders with.
+    if (p === "/api/upstox/status" || p === "/api/upstox/token") {
+      const ip = req.socket.remoteAddress || "";
+      if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip))
+        return send(res, 403, { error: "The Upstox token can only be changed from this computer." });
+      if (p === "/api/upstox/status") return send(res, 200, upstox.status());
+      if (req.method === "POST") {
+        try {
+          return send(res, 200, await upstox.setToken((await readBody(req)).token));
+        } catch (e) {
+          return send(res, 400, { error: e.message });
+        }
+      }
+    }
     if (p === "/api/cryptoflow/status") return send(res, 200, cryptoflow.status);
     if (p === "/api/cryptoflow/sync" && req.method === "POST") {
       cryptoflow.sync();
@@ -736,6 +761,7 @@ if (isMain) {
   alerts.start();
   gtt.start();
   orderflow.start();
+  upstox.start();
   console.log(
     `\n  Quant Terminal ${VERSION} is running\n\n  Open:  ${url}\n  Stop:  Ctrl+C\n  Data:  ${store.DATA_DIR}\n`,
   );

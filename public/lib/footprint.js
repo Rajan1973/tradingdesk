@@ -48,6 +48,24 @@ export function totals(bar) {
   return { buy, sell, delta: buy - sell, poc };
 }
 
+// Total delta of the newest bar's session. Sessions are UTC days, as crypto has no closing bell.
+export function sessionDelta(bars) {
+  const day = (b) => Math.floor(b.at / 864e5);
+  let sum = 0;
+  for (let i = bars.length - 1; i >= 0 && day(bars[i]) === day(bars.at(-1)); i--) sum += totals(bars[i]).delta;
+  return sum;
+}
+
+// Delta divergence at bar i: a close up to a new high on net selling ("bear"), or a close down to a
+// new low on net buying ("bull"). The 5-bar test keeps out the third of all bars that disagree with delta.
+export function divergence(bars, i, lookback = 5) {
+  if (i < lookback) return null;
+  const b = bars[i], d = totals(b).delta, prev = bars.slice(i - lookback, i);
+  if (b.c > b.o && d < 0 && b.h >= Math.max(...prev.map((x) => x.h))) return "bear";
+  if (b.c < b.o && d > 0 && b.l <= Math.min(...prev.map((x) => x.l))) return "bull";
+  return null;
+}
+
 // Imbalances compare diagonally, the way aggressors meet: buyers at a row against sellers one row
 // below, sellers at a row against buyers one row above. Three or more in a row make a stack.
 export function imbalances(bar, step, ratio, minQty) {

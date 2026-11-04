@@ -1,6 +1,6 @@
 // The order flow test screen: footprint cells on a candle chart, with delta and cumulative delta
 // below. History comes from the server; live trades come straight from Binance in the browser.
-import { addTrade, imbalances, totals, TF_MS } from "/lib/footprint.js";
+import { addTrade, divergence, imbalances, sessionDelta, totals, TF_MS } from "/lib/footprint.js";
 import { sessionProfiles } from "/lib/market-profile.js";
 import { drawProfiles } from "/js/market-profile-draw.js";
 
@@ -8,7 +8,7 @@ const LW = window.LightweightCharts;
 const $ = (id) => document.getElementById(id);
 const IST = 19800; // the chart's clock shows India time
 const HOSTS = ["wss://stream.binance.com:9443/ws/", "wss://data-stream.binance.vision/ws/"];
-const UP = "#26a69a", DOWN = "#ef5350";
+const UP = "#26a69a", DOWN = "#ef5350", DIVERGE = "#9333ea";
 const panel = new URLSearchParams(location.search).get("panel");
 const SAVED = panel ? `qt.orderflow.${panel}` : "qt.orderflow";
 if (panel) document.body.classList.add("embed");
@@ -23,6 +23,7 @@ const tfNow = () => (isProfile() ? "30m" : view.tf); // Market Profile prints on
 
 let bars = [], byAt = new Map(), through = 0, live = [], cvdBefore = 0, requestDraw = () => {};
 let wsOpen = false, tradesThisTick = 0, footprintOn = null, dirty = false, loaded = false;
+let diverged = new Map(), closed = null; // bar time -> "bear" or "bull"; only finished bars are judged
 
 const chart = LW.createChart($("chart"), {
   autoSize: true,
@@ -153,12 +154,68 @@ function drawFootprint(ctx) {
   }
 }
 
+// A purple triangle clear of the bar: above it on a bearish divergence, below it on a bullish one.
+// Not on Market Profile, whose letters aren't bars.
+function drawDivergences(ctx) {
+  const range = ts.getVisibleLogicalRange();
+  if (isProfile() || !range) return;
+  const step = view.step;
+  ctx.fillStyle = DIVERGE;
+  for (let i = Math.max(0, Math.floor(range.from)); i <= Math.min(bars.length - 1, Math.ceil(range.to)); i++) {
+    const side = diverged.get(bars[i].at);
+    if (!side) continue;
+    const bear = side === "bear";
+    const x = ts.logicalToCoordinate(i);
+    const y = candles.priceToCoordinate(bear ? (Math.floor(bars[i].h / step) + 1) * step : Math.floor(bars[i].l / step) * step);
+    if (x == null || y == null) continue;
+    const tip = bear ? y - 3 : y + 3, base = bear ? y - 10 : y + 10;
+    ctx.beginPath();
+    ctx.moveTo(x, tip);
+    ctx.lineTo(x - 5, base);
+    ctx.lineTo(x + 5, base);
+    ctx.fill();
+  }
+}
+
 candles.attachPrimitive({
   attached({ requestUpdate }) {
     requestDraw = requestUpdate;
   },
   updateAllViews() {},
-  paneViews: () => [{ zOrder: () => "top", renderer: () => ({ draw: (t) => t.useMediaCoordinateSpace(({ context }) => drawFootprint(context)) }) }],
+  paneViews: () => [
+    {
+      zOrder: () => "top",
+      renderer: () => ({
+        draw: (t) =>
+          t.useMediaCoordinateSpace(({ context }) => {
+            drawFootprint(context);
+            drawDivergences(context);
+          }),
+      }),
+    },
+  ],
+});
+
+// The running total for the session, in the top right corner of the delta chart.
+deltaSeries.attachPrimitive({
+  updateAllViews() {},
+  paneViews: () => [
+    {
+      zOrder: () => "top",
+      renderer: () => ({
+        draw: (t) =>
+          t.useMediaCoordinateSpace(({ context: ctx, mediaSize }) => {
+            if (!bars.length) return;
+            const sum = sessionDelta(bars);
+            ctx.font = "600 12px system-ui, 'Segoe UI', sans-serif";
+            ctx.textAlign = "right";
+            ctx.textBaseline = "top";
+            ctx.fillStyle = sum >= 0 ? "#00796b" : "#c62828";
+            ctx.fillText(`Session delta ${sum >= 0 ? "+" : ""}${qty(sum)} BTC`, mediaSize.width - 8, 6);
+          }),
+      }),
+    },
+  ],
 });
 
 // The library's candles step aside once the footprint draws its own.
@@ -181,11 +238,18 @@ ts.subscribeVisibleLogicalRangeChange(() => {
 // ---------- series ----------
 const toTime = (b) => b.at / 1000 + IST;
 const candlePoint = (b) => ({ time: toTime(b), open: b.o, high: b.h, low: b.l, close: b.c });
-const deltaPoint = (b, d) => ({ time: toTime(b), value: d, color: d >= 0 ? UP : DOWN });
+const deltaPoint = (b, d) => ({ time: toTime(b), value: d, color: diverged.has(b.at) ? DIVERGE : d >= 0 ? UP : DOWN });
+const judge = (i) => {
+  const side = divergence(bars, i);
+  if (side) diverged.set(bars[i].at, side);
+};
 
 function setAll() {
   let cum = 0;
   const cvd = [], delta = [];
+  diverged = new Map();
+  closed = null;
+  for (let i = 0; i < bars.length - 1; i++) judge(i);
   for (const b of bars) {
     const d = totals(b).delta;
     cum += d;
@@ -208,6 +272,7 @@ function addLive(tr) {
   if (bar !== before && bar.at > (before?.at ?? 0)) {
     if (before) cvdBefore += totals(before).delta;
     bars.push(bar);
+    closed = before;
   }
   dirty = true;
 }
@@ -215,6 +280,11 @@ function addLive(tr) {
 setInterval(() => {
   if (!dirty || !bars.length) return;
   dirty = false;
+  if (closed) {
+    judge(bars.length - 2);
+    deltaSeries.update(deltaPoint(closed, totals(closed).delta));
+    closed = null;
+  }
   const b = bars.at(-1), d = totals(b).delta;
   candles.update(candlePoint(b));
   deltaSeries.update(deltaPoint(b, d));
@@ -242,7 +312,7 @@ async function load({ keepView = true } = {}) {
 function latest() {
   setTimeout(() => {
     // Market Profile: about three days, so the letters fit. Footprint: wide enough for numbers.
-    const shown = isProfile() ? 150 : ($("chart").clientWidth - 70) / 90;
+    const shown = isProfile() ? 150 : Math.max(2, ($("chart").clientWidth - 70) / 90); // a hidden panel has no width
     ts.setVisibleLogicalRange({ from: bars.length - shown + 2, to: bars.length + 2 });
   }, 50);
 }
@@ -335,9 +405,11 @@ chart.subscribeCrosshairMove((p) => {
   if (!b) return;
   const t = totals(b);
   const when = new Date(b.at + IST * 1000).toISOString().slice(0, 16).replace("T", " ");
+  const side = diverged.get(b.at);
   $("read").innerHTML =
     `${when} IST &nbsp; O ${b.o} H ${b.h} L ${b.l} C ${b.c} &nbsp; Buy <b class="up">${qty(t.buy)}</b> Sell <b class="dn">${qty(t.sell)}</b> ` +
-    `Delta <b class="${t.delta >= 0 ? "up" : "dn"}">${qty(t.delta)}</b> &nbsp; POC ${t.poc}`;
+    `Delta <b class="${t.delta >= 0 ? "up" : "dn"}">${qty(t.delta)}</b> &nbsp; POC ${t.poc}` +
+    (side ? ` &nbsp; <b style="color:${DIVERGE}">Divergence: ${side === "bear" ? "new high on net selling" : "new low on net buying"}</b>` : "");
 });
 
 $("tf").disabled = isProfile();

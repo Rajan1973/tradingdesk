@@ -35,6 +35,21 @@ export function bucketStart(t, tf) {
   return Math.floor(t / size) * size;
 }
 
+// The latest price on the newest bar, or a new bar if its time is up. Returns null if neither fits.
+// Intraday bars count from the last bar, not from midnight: India's start at 09:15, off a round 30m or 1h.
+// shortcut: a timeframe that doesn't fit the session evenly (75m) can start a bar off the grid at the
+// open, until the source's own bar replaces it.
+export function applyLivePrice(candles, tf, ltp, now = Date.now() / 1000) {
+  const last = candles.at(-1);
+  const moved = { ...last, close: ltp, high: Math.max(last.high, ltp), low: Math.min(last.low, ltp) };
+  if (!isIntraday(tf)) return bucketStart(last.time, tf) === bucketStart(now, tf) ? [...candles.slice(0, -1), moved] : null;
+  const size = parseTf(tf).seconds;
+  const bars = Math.floor((now - last.time) / size);
+  if (bars < 0) return null;
+  if (bars === 0) return [...candles.slice(0, -1), moved];
+  return [...candles, { time: last.time + bars * size, open: ltp, high: ltp, low: ltp, close: ltp, volume: 0 }];
+}
+
 // Merge bars into a larger timeframe. Bars must be sorted ascending.
 export function resample(bars, tf) {
   const out = [];
