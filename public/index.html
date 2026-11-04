@@ -54,20 +54,12 @@
         ><span>Compare</span>
       </button>
       <div class="sep"></div>
-      <select id="layoutSel" class="tb" title="Chart layout">
-        <option value="1">1 chart</option>
-        <option value="2v">2 side by side</option>
-        <option value="2h">2 stacked</option>
-        <option value="3">3 charts</option>
-        <option value="4">4 charts</option>
-        <option value="6">6 charts</option>
-        <option value="8">8 charts</option>
-        <option value="16">16 charts</option>
-      </select>
+      <button id="layoutBtn" class="tb" title="Choose a chart layout" aria-haspopup="true" aria-expanded="false"></button>
       <button id="templatesBtn" class="tb" title="Save or open a layout: charts, stocks, timeframes and indicators">
         <svg viewBox="0 0 24 24"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z" /></svg
         ><span>Layouts</span>
       </button>
+      <a class="tb" href="/orderflow.html" target="_blank" rel="noopener" title="Order flow test screen: Bitcoin footprint with a week of history and live trades"><span>Order flow</span></a>
       <label class="tb check" title="Change the symbol on every chart at once"
         ><input type="checkbox" id="syncSymbol" /> Sync</label
       >

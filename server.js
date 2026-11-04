@@ -18,6 +18,8 @@ import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
 import * as brokers from "./lib/brokers.js";
 import * as gtt from "./lib/gtt.js";
+import * as orderflow from "./lib/orderflow.js";
+import * as cryptoflow from "./lib/cryptoflow.js";
 import * as catalysts from "./lib/catalysts.js";
 import { registerIndicator, INDICATORS } from "./public/lib/indicators.js";
 import { conditionFn, backtest, magnifierTf } from "./public/lib/backtest.js";
@@ -426,6 +428,15 @@ async function handle(req, res) {
     if (p === "/api/catalysts") return send(res, 200, await catalysts.forSymbol(q.symbol));
     if (p === "/api/catalysts/all") return send(res, 200, await catalysts.all());
     // GTT orders: only from this computer, like the broker accounts they place orders with.
+    if (p === "/api/cryptoflow/status") return send(res, 200, cryptoflow.status);
+    if (p === "/api/cryptoflow/sync" && req.method === "POST") {
+      cryptoflow.sync();
+      return send(res, 200, cryptoflow.status);
+    }
+    if (p === "/api/cryptoflow/bars") {
+      const out = cryptoflow.bars(url.searchParams.get("tf"), Number(url.searchParams.get("step")));
+      return out ? send(res, 200, out) : send(res, 400, { error: "Unknown timeframe or row size." });
+    }
     if (p === "/api/gtt" || p.startsWith("/api/gtt/")) {
       const ip = req.socket.remoteAddress || "";
       if (!["127.0.0.1", "::1", "::ffff:127.0.0.1"].includes(ip))
@@ -724,6 +735,7 @@ if (isMain) {
   const url = `http://localhost:${port}`;
   alerts.start();
   gtt.start();
+  orderflow.start();
   console.log(
     `\n  Quant Terminal ${VERSION} is running\n\n  Open:  ${url}\n  Stop:  Ctrl+C\n  Data:  ${store.DATA_DIR}\n`,
   );

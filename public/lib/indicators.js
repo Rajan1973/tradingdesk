@@ -2566,6 +2566,20 @@ export const INDICATORS = [
     }),
   },
   {
+    id: "mprofile",
+    name: "Market Profile (TPO)",
+    group: "Volume",
+    overlay: true,
+    inputs: [
+      { key: "period", label: "Session", type: "select", options: ["Auto", "Day", "Week", "Month"], default: "Auto" },
+      { key: "letterMinutes", label: "Minutes per letter", type: "int", default: 30, min: 5 },
+      { key: "rows", label: "Rows", type: "int", default: 30, min: 6 },
+      { key: "valueArea", label: "Value area %", type: "int", default: 70, min: 10 },
+    ],
+    outputs: [],
+    calc: (bars, p) => ({ marketProfile: { period: p.period, letterMinutes: p.letterMinutes, rows: p.rows, valueArea: p.valueArea } }),
+  },
+  {
     id: "patterns",
     name: "Candlestick Patterns",
     group: "Patterns",

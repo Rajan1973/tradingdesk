@@ -1130,3 +1130,17 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .chart-brand span { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; color: #c9a063; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35); white-space: nowrap; }
 /* Row picked with the arrow keys */
 .wl-row.kb-sel, table.t tbody tr.kb-sel, .cal-row.kb-sel { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+
+/* Layout picker */
+.layout-pop { position: fixed; z-index: 1000; max-width: calc(100vw - 8px); max-height: calc(100vh - 60px); overflow: auto; padding: 6px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); }
+.layout-row { display: flex; align-items: center; gap: 4px; padding: 5px 4px; border-bottom: 1px solid var(--border); }
+.layout-row:last-child { border-bottom: 0; }
+.layout-n { flex: none; width: 22px; height: 22px; margin-right: 6px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--panel-2); color: var(--text); }
+.layout-opt { flex: none; display: grid; place-items: center; width: 36px; height: 32px; padding: 0; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 5px; cursor: pointer; }
+.layout-opt:hover { background: var(--hover); }
+.layout-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.layout-opt.on { color: #f59e0b; border-color: #f59e0b; background: rgba(245, 158, 11, 0.14); }
+
+/* An order flow panel fills its pane */
+.flow-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; z-index: 4; background: #fff; }
+.pane:has(.flow-frame) .zoom-bar { display: none; }

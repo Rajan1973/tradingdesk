@@ -724,6 +724,7 @@ const REF = {
   },
   fractals: null, // markers, checked in the Williams fractals test below
   zigzag: null, // checked in the Zig Zag tests below
+  mprofile: null, // checked in test/orderflow.test.js
   autofib: null, // checked in the auto Fibonacci test below
   autofibext: null,
   twap: () => ({

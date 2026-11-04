@@ -1,5 +1,6 @@
 import { api, download, esc, ticker, exchange } from "./api.js";
 import { ChartPane, CHART_TYPES, newUid } from "./chart.js";
+import { LAYOUTS, LAYOUT_BY_ID, applyLayout, layoutIcon } from "./layouts.js";
 import { TOOLS } from "./drawings.js";
 import {
   INDICATORS,
@@ -18,7 +19,6 @@ const GLOBE_ICON = `<svg viewBox="0 0 24 24" width="17" height="17" fill="none" 
 // Rows that open a chart when clicked, and so can be stepped through with the arrow keys.
 const NAV_ROW = ".wl-row[data-sym], .cal-row[data-sym], tr[data-s]";
 const TF_QUICK = ["1m", "5m", "15m", "1h", "4h", "1D", "1W"];
-const LAYOUTS = { 1: 1, "2v": 2, "2h": 2, 3: 3, 4: 4, 6: 6, 8: 8, 16: 16 };
 const DEFAULT_WATCHLISTS = {
   Main: [
     "BINANCE:BTCUSDT",
@@ -153,30 +153,12 @@ class App {
 
   // ---------- layout ----------
   setLayout(layout, save = true) {
-    const count = LAYOUTS[layout] || 1;
-    this.state.layout = String(layout);
+    const def = LAYOUT_BY_ID[layout] || LAYOUT_BY_ID["1"];
+    const count = def.count;
+    this.state.layout = def.id;
     const grid = $("#grid");
     grid.dataset.count = count;
-    const cols = {
-      1: "1fr",
-      2: layout === "2h" ? "1fr" : "1fr 1fr",
-      3: "2fr 1fr",
-      4: "1fr 1fr",
-      6: "1fr 1fr 1fr",
-      8: "1fr 1fr 1fr 1fr",
-      16: "repeat(4, 1fr)",
-    }[count];
-    const rows = {
-      1: "1fr",
-      2: layout === "2h" ? "1fr 1fr" : "1fr",
-      3: "1fr 1fr",
-      4: "1fr 1fr",
-      6: "1fr 1fr",
-      8: "1fr 1fr",
-      16: "repeat(4, 1fr)",
-    }[count];
-    grid.style.gridTemplateColumns = cols;
-    grid.style.gridTemplateRows = rows;
+    applyLayout(grid, def);
     const cfgs = this.panes.length
       ? this.panes.map((p) => p.cfg)
       : this.state.panes;
@@ -199,13 +181,60 @@ class App {
     [...grid.children].forEach((el) => {
       if (!this.panes.some((p) => p.el === el)) el.remove();
     });
-    if (count === 3) this.panes[0].el.style.gridRow = "span 2";
-    else if (this.panes[0]) this.panes[0].el.style.gridRow = "";
+    this.panes.forEach((p, i) => (p.el.style.gridArea = "abcdefghijklmnop"[i]));
     this.setActive(
       this.panes[Math.min(this.state.active ?? 0, count - 1)] || this.panes[0],
     );
-    $("#layoutSel").value = this.state.layout;
+    $("#layoutBtn").innerHTML = `${layoutIcon(def)}<span>${count}</span>`;
     if (save) this.persist();
+  }
+
+  toggleLayoutPicker() {
+    const btn = $("#layoutBtn");
+    const open = document.querySelector(".layout-pop");
+    const close = () => {
+      document.querySelector(".layout-pop")?.remove();
+      btn.setAttribute("aria-expanded", "false");
+      document.removeEventListener("mousedown", outside, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
+    const outside = (e) => {
+      if (!e.target.closest(".layout-pop") && !e.target.closest("#layoutBtn")) close();
+    };
+    const onKey = (e) => {
+      if (e.key !== "Escape") return;
+      close();
+      btn.focus();
+    };
+    if (open) {
+      open.remove();
+      btn.setAttribute("aria-expanded", "false");
+      return;
+    }
+    const pop = document.createElement("div");
+    pop.className = "layout-pop";
+    pop.setAttribute("role", "menu");
+    pop.innerHTML = [...new Set(LAYOUTS.map((l) => l.count))]
+      .map(
+        (n) =>
+          `<div class="layout-row"><span class="layout-n">${n}</span>${LAYOUTS.filter((l) => l.count === n)
+            .map((l) => `<button role="menuitem" class="layout-opt ${l.id === this.state.layout ? "on" : ""}" data-id="${l.id}" aria-label="${n} chart${n > 1 ? "s" : ""}, arrangement ${l.id}">${layoutIcon(l)}</button>`)
+            .join("")}</div>`,
+      )
+      .join("");
+    pop.onclick = (e) => {
+      const id = e.target.closest("[data-id]")?.dataset.id;
+      if (!id) return;
+      close();
+      this.setLayout(id);
+    };
+    document.body.appendChild(pop);
+    const r = btn.getBoundingClientRect();
+    pop.style.top = `${r.bottom + 4}px`;
+    pop.style.left = `${Math.max(4, Math.min(r.left, innerWidth - pop.offsetWidth - 4))}px`;
+    btn.setAttribute("aria-expanded", "true");
+    document.addEventListener("mousedown", outside, true);
+    document.addEventListener("keydown", onKey, true);
   }
 
   // ---------- layout templates ----------
@@ -219,7 +248,7 @@ class App {
       .sort((a, b) => b[1].savedAt - a[1].savedAt)
       .map(
         ([name, t]) =>
-          `<tr><td class="l"><b>${esc(name)}</b><div class="hint-text">${esc(summary(t))}</div></td><td class="l muted">${esc($(`#layoutSel option[value="${t.layout}"]`)?.textContent || t.layout)}</td><td class="muted">${new Date(t.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</td><td><button class="btn small primary" data-load="${esc(name)}">Open</button> <button class="btn small" data-del="${esc(name)}" title="Delete">×</button></td></tr>`,
+          `<tr><td class="l"><b>${esc(name)}</b><div class="hint-text">${esc(summary(t))}</div></td><td class="l muted">${LAYOUT_BY_ID[t.layout]?.count ?? 1}</td><td class="muted">${new Date(t.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</td><td><button class="btn small primary" data-load="${esc(name)}">Open</button> <button class="btn small" data-del="${esc(name)}" title="Delete">×</button></td></tr>`,
       )
       .join("");
     const card = this.modal(
@@ -338,7 +367,7 @@ class App {
         },
         "Compare with…",
       );
-    $("#layoutSel").onchange = (e) => this.setLayout(e.target.value);
+    $("#layoutBtn").onclick = () => this.toggleLayoutPicker();
     $("#templatesBtn").onclick = () => this.openTemplates();
     $("#syncSymbol").checked = !!this.settings.syncSymbol;
     $("#syncSymbol").onchange = (e) => {

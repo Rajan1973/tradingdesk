@@ -13,6 +13,7 @@ import {
 } from "../lib/series.js";
 import { DrawingLayer, TOOL_BY_ID } from "./drawings.js";
 import { VolumeProfile, SessionVolumeProfile } from "./volume-profile.js";
+import { MarketProfileLayer } from "./market-profile-draw.js";
 import { CatalystLayer, PivotLayer } from "./catalyst-layer.js";
 import { markerType } from "../lib/marker-types.js";
 
@@ -34,6 +35,7 @@ export const CHART_TYPES = [
   ["range", "Range bars"],
   ["kagi", "Kagi"],
   ["pnf", "Point & figure"],
+  ["orderflow", "Order flow (BTC test)"],
 ];
 // Chart types built from price alone, with no meaningful volume per bar.
 const PRICE_ONLY = ["renko", "linebreak", "kagi", "pnf"];
@@ -465,7 +467,28 @@ export class ChartPane {
   }
 
   // ---------- data ----------
+  // An order flow panel is the test screen in a frame, with its own controls and live feed.
+  // shortcut: it always shows Bitcoin, whatever this pane's symbol; add NSE symbols once recorded.
+  syncOrderFlow() {
+    const want = this.cfg.type === "orderflow";
+    if (!want) {
+      this.flowFrame?.remove();
+      this.flowFrame = null;
+    } else if (!this.flowFrame) {
+      this.cfg.flowId ||= newUid();
+      const f = document.createElement("iframe");
+      f.className = "flow-frame";
+      f.title = "Order flow chart";
+      f.src = `/orderflow.html?panel=${encodeURIComponent(this.cfg.flowId)}`;
+      // Clicks inside the frame don't reach this page, so it reports them to pick the active pane.
+      f.onload = () => f.contentWindow.addEventListener("mousedown", () => this.app.setActive(this), true);
+      this.el.appendChild(f);
+      this.flowFrame = f;
+    }
+  }
+
   async load({ keepView = false } = {}) {
+    this.syncOrderFlow();
     const token = (this.loadToken = {});
     this.stopLive();
     this.showMsg(`Loading ${ticker(this.cfg.symbol)}…`);
@@ -573,6 +596,7 @@ export class ChartPane {
   }
 
   render(resetView) {
+    this.syncOrderFlow();
     const prevRange = this.chart.timeScale().getVisibleLogicalRange();
     const atEnd =
       prevRange && this.shown.length && prevRange.to >= this.shown.length - 3;
@@ -765,6 +789,11 @@ export class ChartPane {
         const vp = new VolumeProfile(this, res.volumeProfile);
         this.main.attachPrimitive(vp);
         this.vpPrims.push(vp);
+      }
+      if (res.marketProfile) {
+        const mp = new MarketProfileLayer(this, res.marketProfile);
+        this.main.attachPrimitive(mp);
+        this.vpPrims.push(mp);
       }
       if (res.sessionProfile) {
         const sp = new SessionVolumeProfile(this, res.sessionProfile);
