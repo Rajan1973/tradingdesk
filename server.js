@@ -569,6 +569,23 @@ async function handle(req, res) {
       }
       const m = /^\/api\/gtt\/([0-9a-f-]{36})(\/cancel)?$/.exec(p);
       if (m && m[2] && req.method === "POST") return send(res, 200, view(gtt.cancel(m[1])));
+      if (m && !m[2] && req.method === "PATCH") {
+        // A change decides a later REAL order, so it needs the same confirmation as a new one.
+        if (req.headers["x-qt-live-order"] !== "confirmed")
+          return send(res, 403, { error: "GTT changes need confirming in the order window." });
+        const body = await readBody(req);
+        const g = gtt.list().find((x) => x.id === m[1]);
+        if (!g) return send(res, 404, { error: "No such GTT." });
+        if (g.fo && !g.allowOpen) {
+          // A stop on a position may still only close it, counting its other stops and exit orders.
+          const pos = await brokers.kotakFoPosition(g.account, g.fo.tradingSymbol, g.product);
+          const others = gtt.list().filter((x) => x.id !== g.id && x.account === g.account && x.fo?.tradingSymbol === g.fo.tradingSymbol && x.product === g.product && ["active", "needs-login", "placing"].includes(x.status));
+          const left = pos.room - others.reduce((sum, x) => sum + x.qty, 0);
+          if (Number(body.qty) > left) return send(res, 400, { error: `Only ${Math.max(0, left)} of ${g.fo.tradingSymbol} can have this stop: the rest has exit orders or other stops on it.` });
+        }
+        const qt = g.fo ? { price: (await brokers.foPrices([`${g.fo.seg}|${g.fo.token}`]))[`${g.fo.seg}|${g.fo.token}`] } : Object.values(await liveQuotes([g.symbol]).catch(() => ({})))[0];
+        return send(res, 200, view(gtt.modify(m[1], body, qt?.price)));
+      }
       if (m && !m[2] && req.method === "DELETE") {
         gtt.remove(m[1]);
         return send(res, 200, { ok: true });

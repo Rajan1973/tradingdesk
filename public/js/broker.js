@@ -759,12 +759,86 @@ async function gttHtml() {
       .join("<br>");
   const row = (g) => {
     const last = g.history?.[g.history.length - 1]?.text || "";
-    return `<tr ${g.fo ? "" : `data-s="${esc(g.symbol)}" style="cursor:pointer"`}><td class="l"><b>${esc(ticker(g.symbol).replace(/\.NS$/, ""))}</b></td><td class="l">${esc(g.accountName)}</td><td class="${g.side === "BUY" ? "up" : "down"}">${g.side}</td><td>${g.qty}</td><td class="l">${g.kind === "oco" ? "OCO" : "Single"} · ${g.product}</td><td class="l">${legs(g)}</td><td>${g.lastPrice ? fmtPrice(g.lastPrice) : "—"}</td><td class="l ${g.status === "needs-login" || g.status === "failed" ? "down" : g.status === "triggered" ? "up" : ""}" title="${esc(last)}">${status[g.status] || g.status}</td><td>${["active", "needs-login"].includes(g.status) ? `<button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "placing" ? "" : `<button class="btn small" data-gtt-remove="${g.id}" title="Remove from the list">×</button>`}</td></tr>`;
+    return `<tr ${g.fo ? "" : `data-s="${esc(g.symbol)}" style="cursor:pointer"`}><td class="l"><b>${esc(ticker(g.symbol).replace(/\.NS$/, ""))}</b></td><td class="l">${esc(g.accountName)}</td><td class="${g.side === "BUY" ? "up" : "down"}">${g.side}</td><td>${g.qty}</td><td class="l">${g.kind === "oco" ? "OCO" : "Single"} · ${g.product}</td><td class="l">${legs(g)}</td><td>${g.lastPrice ? fmtPrice(g.lastPrice) : "—"}</td><td class="l ${g.status === "needs-login" || g.status === "failed" ? "down" : g.status === "triggered" ? "up" : ""}" title="${esc(last)}">${status[g.status] || g.status}</td><td>${["active", "needs-login"].includes(g.status) ? `<button class="btn small" data-gtt-edit="${g.id}">Modify</button> <button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "placing" ? "" : `<button class="btn small" data-gtt-remove="${g.id}" title="Remove from the list">×</button>`}</td></tr>`;
   };
   const head = `<thead><tr><th class="l">Stock</th><th class="l">Account</th><th>Side</th><th>Qty</th><th class="l">Type</th><th class="l">Triggers</th><th>LTP</th><th class="l">Status</th><th></th></tr></thead>`;
   return `<h4>GTT orders (${live.length} watching) <span class="hint-text">kept in Quant Terminal, checked every 5 seconds in market hours</span></h4>
     ${live.length ? `<table class="t">${head}<tbody>${live.map(row).join("")}</tbody></table>` : '<p class="hint-text">No active GTTs. Make one from the order window\'s GTT tab.</p>'}
     ${done.length ? `<details class="ow-done"><summary class="hint-text">Finished GTTs (${done.length})</summary><table class="t">${head}<tbody>${done.map(row).join("")}</tbody></table></details>` : ""}`;
+}
+
+// Change a watching GTT: its quantity and, per leg, the trigger, the order sent and any trailing.
+function openGttEdit(el, app, panels, b, g) {
+  const lot = g.fo?.seg.endsWith("_fo") ? g.fo.lot : 1;
+  const legName = (l) => (l.name === "trigger" ? "Trigger" : l.name === "stoploss" ? "Stop-loss" : "Target");
+  const sell = g.side === "SELL";
+  const legHtml = (l, i) => {
+    const canTrail = l.name === "stoploss" || l.name === "trigger";
+    return `<h4>${legName(l)}</h4><div class="form-grid">
+      <label class="field">Trigger (₹)<input data-g="trigger" data-i="${i}" type="number" min="0" step="0.05" value="${l.trigger}"></label>
+      <label class="field">When hit, send<select data-g="orderType" data-i="${i}"><option value="LIMIT" ${l.orderType === "LIMIT" ? "selected" : ""}>Limit order</option><option value="MARKET" ${l.orderType === "MARKET" ? "selected" : ""}>Market order</option></select></label>
+      <label class="field">Limit price (₹)<input data-g="price" data-i="${i}" type="number" min="0" step="0.05" value="${l.price ?? ""}" ${l.orderType === "LIMIT" ? "" : "disabled"}></label>
+      ${
+        canTrail
+          ? `<label class="field">Trailing<select data-g="trailOn" data-i="${i}"><option value="1" ${l.trail ? "selected" : ""}>On</option><option value="0" ${l.trail ? "" : "selected"}>Off</option></select></label>
+      <label class="field">Trail by<input data-g="trailValue" data-i="${i}" type="number" min="0" step="0.5" value="${l.trail?.value ?? 5}" ${l.trail ? "" : "disabled"}></label>
+      <label class="field">Trail in<select data-g="trailType" data-i="${i}" ${l.trail ? "" : "disabled"}><option value="pct" ${l.trail?.type !== "pts" ? "selected" : ""}>% from the best price</option><option value="pts" ${l.trail?.type === "pts" ? "selected" : ""}>₹ from the best price</option></select></label>
+      <p class="hint-text" data-g="note" data-i="${i}" style="grid-column:1/-1"></p>`
+          : ""
+      }
+    </div>`;
+  };
+  const card = app.modal(
+    `Modify GTT: ${ticker(g.symbol).replace(/\.NS$/, "")}`,
+    `<p class="hint-text">${g.side}, ${esc(g.product)}, on ${esc(nameOf(b))}. Last price ₹${g.lastPrice ? fmtPrice(g.lastPrice) : "?"}.</p>
+    <div class="form-grid"><label class="field">Quantity${lot > 1 ? ` (lots of ${lot})` : ""}<input id="geQty" type="number" min="${lot}" step="${lot}" value="${g.qty}"></label></div>
+    ${g.legs.map(legHtml).join("")}
+    <div class="row-flex" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="geCancel">Keep as it is</button> <button class="btn primary" id="geSave">Save changes</button></div>`,
+  );
+  const f = (name, i) => card.querySelector(`[data-g="${name}"][data-i="${i}"]`);
+  // A trailing stop tightens to its trail distance at the next check, so show that before saving.
+  const refresh = (i) => {
+    const on = f("trailOn", i)?.value === "1";
+    if (!f("trailOn", i)) return;
+    f("trailValue", i).disabled = f("trailType", i).disabled = !on;
+    const trigger = Number(f("trigger", i).value), v = Number(f("trailValue", i).value), p = g.lastPrice;
+    const gap = f("trailType", i).value === "pct" ? (p * v) / 100 : v;
+    const moved = sell ? p - gap : p + gap;
+    const tighter = sell ? moved > trigger : moved < trigger;
+    f("note", i).textContent = on && p && v > 0 && tighter ? `With this trail, the stop will move to about ₹${fmtPrice(moved)} at the next check. To keep ₹${fmtPrice(trigger)}, widen the trail.` : "";
+  };
+  g.legs.forEach((_, i) => {
+    f("orderType", i).onchange = () => (f("price", i).disabled = f("orderType", i).value === "MARKET");
+    for (const name of ["trigger", "trailOn", "trailValue", "trailType"]) if (f(name, i)) f(name, i).oninput = f(name, i).onchange = () => refresh(i);
+    refresh(i);
+  });
+  card.querySelector("#geCancel").onclick = () => app.closeModal();
+  card.querySelector("#geSave").onclick = async () => {
+    const qty = Number(card.querySelector("#geQty").value);
+    const legs = g.legs.map((l, i) => ({
+      name: l.name,
+      trigger: Number(f("trigger", i).value),
+      orderType: f("orderType", i).value,
+      price: f("orderType", i).value === "LIMIT" ? Number(f("price", i).value) : null,
+      ...(f("trailOn", i)?.value === "1" ? { trail: { type: f("trailType", i).value, value: Number(f("trailValue", i).value) } } : {}),
+    }));
+    const line = (l) => `${legName(l)} at ₹${l.trigger} → ${l.orderType === "MARKET" ? "market order" : `limit ₹${l.price}`}${l.trail ? `, trailing ${l.trail.type === "pct" ? `${l.trail.value}%` : `₹${l.trail.value}`}` : ", not trailing"}`;
+    if (!confirm(`Change this GTT on ${nameOf(b)}?\n\n${g.side} ${qty} × ${ticker(g.symbol).replace(/\.NS$/, "")}\n${legs.map(line).join("\n")}\n\nWhen a trigger is hit, a REAL order is placed automatically.`)) return;
+    try {
+      const res = await fetch(`/api/gtt/${g.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-qt": "1", "x-qt-live-order": "confirmed" },
+        body: JSON.stringify({ qty, legs }),
+      });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
+      app.closeModal();
+      app.toast("GTT changed. Quant Terminal is watching the new values.");
+      drawGtts(el, app, panels, b);
+    } catch (e) {
+      app.toast(`${e.message} The GTT wasn't changed.`, "err");
+    }
+  };
 }
 
 async function drawGtts(el, app, panels, b) {
@@ -774,6 +848,7 @@ async function drawGtts(el, app, panels, b) {
   const n = el.querySelector("#brGttCount");
   if (n) n.textContent = view.gtts.filter((g) => ["active", "needs-login", "placing"].includes(g.status)).length;
   box.querySelectorAll("tr[data-s]").forEach((tr) => (tr.onclick = (e) => !e.target.closest("button") && app.setSymbol(tr.dataset.s)));
+  box.querySelectorAll("[data-gtt-edit]").forEach((x) => (x.onclick = () => openGttEdit(el, app, panels, b, view.gtts.find((g) => g.id === x.dataset.gttEdit))));
   box.querySelectorAll("[data-gtt-cancel]").forEach(
     (x) =>
       (x.onclick = async () => {

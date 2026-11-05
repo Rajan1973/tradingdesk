@@ -240,3 +240,56 @@ test("a GTT from the order window may open a position; one on a position may not
   await gtt.evaluate();
   assert.equal(t2.placed[0].allowOpen, false);
 });
+
+test("modify: new trigger and trail apply, and the changed stop then fires at them", async () => {
+  const t = setup({ broker: "kotak" });
+  const g = gtt.add({ ...foBase, legs: [{ trigger: 95, orderType: "LIMIT", price: 94, trail: { type: "pct", value: 5 } }] }, 100);
+  t.setPrice(120);
+  await gtt.evaluate();
+  assert.equal(g.legs[0].trigger, 114);
+  const id = g.id;
+  gtt.modify(id, { qty: 65, legs: [{ name: "trigger", trigger: 100, orderType: "LIMIT", price: 99, trail: { type: "pct", value: 20 } }] }, 120);
+  assert.equal(g.legs[0].trail.best, 120);
+  await gtt.evaluate();
+  assert.equal(g.legs[0].trigger, 100, "20% from 120 is 96, so the stop stays at 100 and doesn't snap back to 114");
+  assert.equal(t.placed.length, 0);
+  t.setPrice(99.9);
+  await gtt.evaluate();
+  assert.deepEqual([t.placed.length, t.placed[0].price], [1, 99]);
+  assert.match(g.history.find((h) => /^Changed/.test(h.text)).text, /Was: SELL 65/);
+});
+
+test("modify keeps the best price when only the order changes, and may stop trailing", () => {
+  setup({ broker: "kotak" });
+  const g = gtt.add({ ...foBase, legs: [{ trigger: 95, orderType: "LIMIT", price: 94, trail: { type: "pct", value: 5 } }] }, 100);
+  g.legs[0].trail.best = 110;
+  gtt.modify(g.id, { qty: 130, legs: [{ name: "trigger", trigger: 95, orderType: "MARKET", trail: { type: "pct", value: 5 } }] }, 100);
+  assert.deepEqual([g.qty, g.legs[0].orderType, g.legs[0].trail.best], [130, "MARKET", 110]);
+  gtt.modify(g.id, { qty: 65, legs: [{ name: "trigger", trigger: 95, orderType: "MARKET" }] }, 100);
+  assert.equal(g.legs[0].trail, null);
+});
+
+test("a refused change leaves the GTT exactly as it was, and finished GTTs can't change", async () => {
+  const t = setup({ broker: "kotak" });
+  const g = gtt.add({ ...foBase, legs: [{ trigger: 90, orderType: "MARKET" }] }, 100);
+  const before = JSON.stringify(g);
+  const leg = { name: "trigger", trigger: 90, orderType: "MARKET" };
+  assert.throws(() => gtt.modify(g.id, { qty: 60, legs: [leg] }, 100), /lots of 65/);
+  assert.throws(() => gtt.modify(g.id, { qty: 65, legs: [{ ...leg, orderType: "LIMIT" }] }, 100), /limit price/);
+  assert.throws(() => gtt.modify(g.id, { qty: 65, legs: [] }, 100), /one leg/);
+  assert.throws(() => gtt.modify(g.id, { qty: 65, legs: [leg] }, undefined), /current price/);
+  assert.throws(() => gtt.modify(g.id, { qty: 65, legs: [{ ...leg, trigger: 105, trail: { type: "pct", value: 5 } }] }, 100), /must be a stop/);
+  assert.equal(JSON.stringify(g), before);
+  t.setPrice(89);
+  await gtt.evaluate();
+  assert.throws(() => gtt.modify(g.id, { qty: 65, legs: [leg] }, 100), /still watching/);
+  assert.throws(() => gtt.modify("nope", {}, 100), /No such/);
+});
+
+test("modify works on both legs of an OCO", () => {
+  setup();
+  const g = gtt.add({ ...base, kind: "oco", legs: [{ name: "stoploss", trigger: 95, orderType: "MARKET" }, { name: "target", trigger: 105, orderType: "MARKET" }] }, 100);
+  gtt.modify(g.id, { qty: 5, legs: [{ name: "stoploss", trigger: 92, orderType: "MARKET" }, { name: "target", trigger: 110, orderType: "LIMIT", price: 110 }] }, 100);
+  assert.deepEqual(g.legs.map((l) => l.trigger), [92, 110]);
+  assert.throws(() => gtt.modify(g.id, { qty: 5, legs: [{ name: "stoploss", trigger: 101, orderType: "MARKET" }, { name: "target", trigger: 110, orderType: "MARKET" }] }, 100), /must be below/);
+});
