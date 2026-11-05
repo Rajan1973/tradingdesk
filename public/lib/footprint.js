@@ -3,6 +3,7 @@
 export const BASE_STEP = 5; // the finest row stored, in dollars
 export const TF_MS = { "1m": 6e4, "5m": 3e5, "15m": 9e5, "30m": 18e5, "1h": 36e5, "4h": 144e5 };
 export const STEPS = [5, 10, 25, 50, 100, 250];
+export const STOCK_STEPS = [0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500];
 
 const rowOf = (price, step) => Math.floor(price / step) * step;
 

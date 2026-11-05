@@ -286,11 +286,11 @@ function drawPortfolio(el, app, panels, b, d) {
     <h4>Positions today (${d.positions.length})</h4>
     ${
       d.positions.length
-        ? `<table class="t"><thead><tr><th class="l">Instrument</th><th>Product</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&amp;L</th></tr></thead><tbody>${d.positions
-            .map((p) =>
+        ? `<table class="t"><thead><tr><th class="l">Instrument</th><th>Product</th><th>Qty</th><th>Avg</th><th>LTP</th><th>P&amp;L</th><th></th></tr></thead><tbody>${d.positions
+            .map((p, i) =>
               row(
-                p.symbol,
-                `<td class="l">${esc(p.name)}</td><td>${esc(p.product || "")}</td><td>${fmtNum(p.qty, 0)}</td><td>${p.avg == null ? "—" : fmtPrice(p.avg)}</td><td>${p.ltp == null ? "—" : fmtPrice(p.ltp)}</td>${pnlCell(p.pnl)}`,
+                p.fo ? `${p.fo.seg === "bse_fo" ? "BFO" : "NFO"}:${p.fo.tradingSymbol}` : p.symbol,
+                `<td class="l">${esc(p.name)}</td><td>${esc(p.product || "")}</td><td>${fmtNum(p.qty, 0)}</td><td>${p.avg == null ? "—" : fmtPrice(p.avg)}</td><td data-fo-ltp="${i}">${p.ltp == null ? "—" : fmtPrice(p.ltp)}</td><td data-fo-pnl="${i}" class="${(p.pnl || 0) >= 0 ? "up" : "down"}">${p.pnl == null ? "—" : inr(p.pnl)}</td><td>${p.fo && p.qty ? `<button class="btn small" data-trail="${i}">Trailing stop</button>` : ""}</td>`,
               ),
             )
             .join("")}</tbody></table>`
@@ -304,7 +304,7 @@ function drawPortfolio(el, app, panels, b, d) {
     ${doneOrders.length ? orderTable(doneOrders) : '<p class="hint-text">No executed, cancelled or rejected orders today.</p>'}
     </div>
   </div></div>`;
-  box.querySelectorAll("tr[data-s]").forEach((tr) => (tr.onclick = () => app.setSymbol(tr.dataset.s)));
+  box.querySelectorAll("tr[data-s]").forEach((tr) => (tr.onclick = (e) => !e.target.closest("button") && app.setSymbol(tr.dataset.s)));
   box.querySelectorAll(".br-tabs [data-pane]").forEach(
     (x) =>
       (x.onclick = () => {
@@ -315,6 +315,88 @@ function drawPortfolio(el, app, panels, b, d) {
   );
   bindTicket(el, app, panels, b);
   drawGtts(el, app, panels, b);
+  box.querySelectorAll("[data-trail]").forEach((x) => (x.onclick = () => openTrail(el, app, panels, b, d.positions[x.dataset.trail])));
+  watchFoPrices(box, b, d.positions);
+}
+
+// F&O positions: the price and P&L refresh every 5 seconds while the Positions tab is showing.
+let foTimer = null;
+function watchFoPrices(box, b, positions) {
+  clearInterval(foTimer);
+  const keyOf = (p) => `${p.fo.seg}|${p.fo.token}`;
+  const open = positions.map((p, i) => [p, i]).filter(([p]) => p.fo && p.qty);
+  if (!open.length) return;
+  foTimer = setInterval(async () => {
+    if (!box.isConnected) return clearInterval(foTimer);
+    if (view.pane !== "positions" || document.hidden) return;
+    const prices = await api.get(`/api/broker/${encodeURIComponent(b)}/fo-prices?keys=${encodeURIComponent(open.map(([p]) => keyOf(p)).join(","))}`).catch(() => null);
+    for (const [p, i] of open) {
+      const ltp = prices?.[keyOf(p)];
+      const cell = box.querySelector(`[data-fo-ltp="${i}"]`), pnl = box.querySelector(`[data-fo-pnl="${i}"]`);
+      if (!ltp || !cell || !pnl) continue;
+      p.ltp = ltp;
+      p.pnl = p.qty * ltp - p.cost;
+      cell.textContent = fmtPrice(ltp);
+      pnl.textContent = inr(p.pnl);
+      pnl.className = p.pnl >= 0 ? "up" : "down";
+    }
+  }, 5000);
+}
+
+// A trailing stop that closes an F&O position. The server re-reads the position before saving it.
+function openTrail(el, app, panels, b, p) {
+  if (!p.ltp) return app.toast("No live price yet for this position. Try again in a moment.", "err");
+  const long = p.qty > 0, side = long ? "SELL" : "BUY";
+  const tick = (v) => Math.round(v * 20) / 20;
+  const card = app.modal(
+    `Trailing stop: ${p.name}`,
+    `<p class="hint-text">Now ₹${fmtPrice(p.ltp)}. Position ${fmtNum(p.qty, 0)} (${p.product}). Kept in Quant Terminal: the app must stay running and ${esc(nameOf(b))} logged in.</p>
+    <div class="form-grid">
+      <label class="field">Quantity to ${side.toLowerCase()} (lots of ${p.fo.lot})<input id="tsQty" type="number" min="${p.fo.lot}" step="${p.fo.lot}" max="${Math.abs(p.qty)}" value="${Math.abs(p.qty)}"></label>
+      <label class="field">Trail by<input id="tsValue" type="number" min="0" step="0.5" value="10"></label>
+      <label class="field">Trail in<select id="tsType"><option value="pct">% from the best price</option><option value="pts">₹ from the best price</option></select></label>
+      <label class="field">Stop starts at (₹)<input id="tsStop" type="number" min="0" step="0.05"></label>
+      <label class="field">When hit, send<select id="tsOrder"><option value="LIMIT">Limit order</option><option value="MARKET">Market order</option></select></label>
+      <label class="field">Limit ${long ? "below" : "above"} the stop by (₹)<input id="tsBuffer" type="number" min="0" step="0.05"></label>
+    </div>
+    <div class="row-flex" style="justify-content:flex-end;margin-top:10px"><button class="btn" data-close-trail>Cancel</button> <button class="btn primary" id="tsSave">Save trailing stop</button></div>`,
+  );
+  const f = (id) => card.querySelector(id);
+  const fill = () => {
+    const v = Number(f("#tsValue").value) || 0;
+    const gap = f("#tsType").value === "pct" ? (p.ltp * v) / 100 : v;
+    const stop = tick(long ? p.ltp - gap : p.ltp + gap);
+    f("#tsStop").value = stop;
+    f("#tsBuffer").value = tick(stop * 0.02);
+  };
+  fill();
+  f("#tsValue").oninput = f("#tsType").onchange = fill;
+  f("#tsOrder").onchange = () => (f("#tsBuffer").disabled = f("#tsOrder").value === "MARKET");
+  f("[data-close-trail]").onclick = () => app.closeModal();
+  f("#tsSave").onclick = async () => {
+    const qty = Number(f("#tsQty").value), trigger = Number(f("#tsStop").value), value = Number(f("#tsValue").value);
+    const type = f("#tsType").value, orderType = f("#tsOrder").value, buffer = Number(f("#tsBuffer").value) || 0;
+    const price = orderType === "LIMIT" ? tick(long ? trigger - buffer : trigger + buffer) : null;
+    const ok = confirm(
+      `Trailing stop on ${nameOf(b)} (kept in Quant Terminal)\n\n${side} ${qty} × ${p.name} (${p.product})\nStop at ₹${trigger}, trailing ${type === "pct" ? `${value}%` : `₹${value}`} from the best price\nWhen hit: ${orderType === "MARKET" ? "market order" : `limit order at about ₹${price} (it may not fill if the price falls fast)`}\n\nNow ₹${p.ltp}. When the stop is hit, a REAL order is placed automatically.\n\nSave this stop?`,
+    );
+    if (!ok) return;
+    try {
+      const res = await fetch("/api/gtt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-qt": "1", "x-qt-live-order": "confirmed" },
+        body: JSON.stringify({ account: b, tradingSymbol: p.fo.tradingSymbol, product: p.product, qty, legs: [{ trigger, orderType, price, trail: { type, value } }] }),
+      });
+      const r = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
+      app.closeModal();
+      app.toast(`Trailing stop saved on ${p.name}. Quant Terminal is watching it.`);
+      view.pane = "gtt";
+      renderBroker(el.closest("#bottomBody") || el, app, panels);
+    } catch (e) {
+      app.toast(e.message, "err");
+    }
+  };
 }
 
 // ---------- order window (Zerodha-style) ----------
@@ -323,13 +405,28 @@ function drawPortfolio(el, app, panels, b, d) {
 const tradable = (sym) => /^YAHOO:[A-Z0-9&\-]+\.NS$/i.test(sym || "");
 const T = () => view.ticket;
 if (!view.ticket.tab) Object.assign(view.ticket, { tab: "regular", gttKind: "oco", sl: { pct: -5, orderType: "LIMIT", trail: false, trailType: "pct", trailValue: 2 }, tg: { pct: 5, orderType: "LIMIT" } });
-const quotesFor = {}; // symbol -> { nse, bse }
+const quotesFor = {}; // symbol, or a Kotak contract's "seg|token" -> { nse, bse }
+// A contract picked in the order window's search (Kotak only). Without one, it follows the chart.
+const pickedOf = (b) => (acctOf(b)?.broker === "kotak" ? T().instrument || null : null);
+const keyOf = (c) => `${c.seg}|${c.token}`;
+const SEG = { nse_cm: "NSE", bse_cm: "BSE", nse_fo: "NFO", bse_fo: "BFO" };
+const contractName = (c) => (c.kind === "eq" ? c.name : c.opt === "FUT" ? `${c.name} FUT ${c.expiry}` : `${c.name} ${c.strike} ${c.opt} ${c.expiry}`);
+const unitsOf = (t, c) => (t.qty || 0) * (c?.kind === "fo" ? c.lot : 1);
+function pick(c) {
+  const t = T();
+  Object.assign(t, { instrument: c, qty: 1, price: null, trigger: null, tab: t.tab });
+  for (const key of ["sl", "tg"]) Object.assign(t[key], { trigger: null, price: null });
+}
+const findBox = (b, hint = "") =>
+  acctOf(b)?.broker === "kotak"
+    ? `<div class="ow-find"><input id="owFind" autocomplete="off" aria-label="Search stocks and F&amp;O" placeholder="Search stock or F&amp;O: NIFTY 23900 CE"><div id="owFound"></div>${hint}</div>`
+    : "";
 
 // Defaults from the live price, filled in before the window is drawn: the limit price, and GTT
 // triggers 5% either side (stop below and target above for a sell, the other way for a buy).
 function fillDefaultsFor(app, sym) {
   const t = T();
-  const p = quotesFor[sym]?.nse || app.prices[sym];
+  const p = quotesFor[sym]?.nse || app.prices?.[sym];
   if (!p) return;
   const r = (v) => Math.round(v * 20) / 20;
   for (const key of ["sl", "tg"]) {
@@ -345,34 +442,43 @@ function fillDefaultsFor(app, sym) {
 }
 
 function ticketHtml(app, b) {
-  const sym = app.active?.cfg.symbol;
+  const c = pickedOf(b);
+  const sym = c ? keyOf(c) : app.active?.cfg.symbol;
   const t = T();
   fillDefaultsFor(app, sym);
   const a = acctOf(b);
+  const fno = c?.kind === "fo";
+  if (fno && t.product === "CNC") t.product = "NRML";
+  if (!fno && t.product === "NRML") t.product = "CNC";
   const icici = a?.broker === "icici";
   if (icici) {
     if (!["LIMIT", "SL"].includes(t.type)) t.type = "LIMIT";
     t.product = "CNC";
   }
-  if (!tradable(sym))
-    return `<div class="ow"><div class="ow-head buy"><b>Order window</b></div><p class="hint-text" style="padding:10px">Open an NSE stock chart (a symbol ending in .NS) to place an order or a GTT on it.</p></div>`;
-  const name = ticker(sym).replace(/\.NS$/, "");
+  if (!c && !tradable(sym))
+    return `<div class="ow"><div class="ow-head buy"><b>Order window</b></div>${findBox(b)}<p class="hint-text" style="padding:10px">${a?.broker === "kotak" ? "Search above for a stock or F&amp;O contract, or open" : "Open"} an NSE stock chart (a symbol ending in .NS) to place an order or a GTT on it.</p></div>`;
+  const name = c ? contractName(c) : ticker(sym).replace(/\.NS$/, "");
   const q = quotesFor[sym] || {};
   const sell = t.side === "SELL";
   const radio = (group, value, label, sub = "", disabled = false) =>
     `<label class="ow-radio ${disabled ? "off" : ""}"><input type="radio" name="${group}" value="${value}" ${t[group === "owProd" ? "product" : group === "owType" ? "type" : group === "owKind" ? "gttKind" : group] === value ? "checked" : ""} ${disabled ? "disabled" : ""}> ${label}${sub ? ` <span class="muted">${sub}</span>` : ""}</label>`;
   const head = `<div class="ow-head ${sell ? "sell" : "buy"}">
       <div class="row-flex" style="align-items:center"><b>${esc(name)}</b><span class="spacer"></span><span class="muted" style="margin-right:6px">${sell ? "Sell" : "Buy"}</span><label class="ow-switch" title="Buy / Sell"><input type="checkbox" id="owSide" ${sell ? "checked" : ""}><span></span></label></div>
-      <div class="ow-ex"><label title="Orders go to NSE"><input type="radio" checked> NSE <b id="owNse">${q.nse ? `₹${fmtPrice(q.nse)}` : "…"}</b></label><label class="off" title="BSE orders aren't supported yet"><input type="radio" disabled> BSE <b id="owBse">${q.bse ? `₹${fmtPrice(q.bse)}` : "…"}</b></label></div>
+      <div class="ow-ex">${
+        c
+          ? `<label title="Orders go to ${SEG[c.seg]}"><input type="radio" checked> ${SEG[c.seg]} <b id="owNse">${q.nse ? `₹${fmtPrice(q.nse)}` : "…"}</b></label>${fno ? `<span>Lot ${c.lot}</span>` : ""}${fno ? `<button class="btn small" id="owOpenChart" type="button">Open chart</button>` : ""}<button class="btn small" id="owChart" type="button">Back to chart stock</button>`
+          : `<label title="Orders go to NSE"><input type="radio" checked> NSE <b id="owNse">${q.nse ? `₹${fmtPrice(q.nse)}` : "…"}</b></label><label class="${a?.broker === "kotak" ? "" : "off"}" title="${a?.broker === "kotak" ? "Send orders to BSE" : "BSE orders are for Kotak Neo accounts"}"><input type="radio" id="owToBse" ${a?.broker === "kotak" ? "" : "disabled"}> BSE <b id="owBse">${q.bse ? `₹${fmtPrice(q.bse)}` : "…"}</b></label>`
+      }</div>
     </div>`;
   const tabs = `<div class="ow-tabs"><button data-tab="regular" class="${t.tab === "regular" ? "on" : ""}">Regular</button><button data-tab="gtt" class="${t.tab === "gtt" ? "on" : ""}">GTT</button><span class="spacer"></span><span class="hint-text">${esc(nameOf(b))}</span></div>`;
-  const product = `<div class="row-flex ow-row">${radio("owProd", "MIS", "Intraday", "MIS", icici)}${radio("owProd", "CNC", "Longterm", "CNC")}</div>`;
+  const product = `<div class="row-flex ow-row">${radio("owProd", "MIS", "Intraday", "MIS", icici)}${fno ? radio("owProd", "NRML", "Overnight", "NRML") : radio("owProd", "CNC", "Longterm", "CNC")}</div>`;
+  const qtyName = fno ? `Lots <span class="muted">× ${c.lot}</span>` : "Qty.";
   let body;
   if (t.tab === "regular") {
     const priceOn = t.type === "LIMIT" || t.type === "SL", trigOn = t.type === "SL" || t.type === "SL-M";
     body = `${product}
       <div class="row-flex ow-row">
-        <label class="ow-field">Qty.<input id="owQty" type="number" min="1" step="1" value="${t.qty}"></label>
+        <label class="ow-field">${qtyName}<input id="owQty" type="number" min="1" step="1" value="${t.qty}"></label>
         <label class="ow-field ${priceOn ? "" : "off"}">Price<input id="owPrice" type="number" step="0.05" min="0" value="${priceOn ? (t.price ?? "") : ""}" ${priceOn ? "" : "disabled"} placeholder="${priceOn ? "" : "Market"}"></label>
         <label class="ow-field ${trigOn ? "" : "off"}">Trigger price<input id="owTrig" type="number" step="0.05" min="0" value="${trigOn ? (t.trigger ?? "") : ""}" ${trigOn ? "" : "disabled"}></label>
       </div>
@@ -393,25 +499,62 @@ function ticketHtml(app, b) {
       </div>`;
     };
     const single = t.gttKind === "single";
-    body = `<div class="row-flex ow-row">${radio("owKind", "single", "Single")}${radio("owKind", "oco", "OCO", "stop-loss + target")}<span class="spacer"></span><label class="ow-field small">Qty.<input id="owQty" type="number" min="1" step="1" value="${t.qty}"></label></div>
+    body = `<div class="row-flex ow-row">${radio("owKind", "single", "Single")}${radio("owKind", "oco", "OCO", "stop-loss + target")}<span class="spacer"></span><label class="ow-field small">${qtyName}<input id="owQty" type="number" min="1" step="1" value="${t.qty}"></label></div>
       ${product}
       ${single ? leg("sl", sell ? "Stop-loss (sell below)" : "Stop / breakout (buy above)", "sl") : leg("sl", "Stop-loss", "sl") + leg("tg", "Target", "tg")}
       <p class="hint-text ow-note">Kept in Quant Terminal, not sent to ${esc(nameOf(b))} until triggered. The app must be running and the account logged in when it triggers. Expires in 1 year.${icici ? " ICICI takes no market orders: a Market leg goes out as a limit 1% through the price." : ""}</p>`;
   }
   const funds = view.data[b]?.funds?.available;
-  return `<div class="ow">${head}${tabs}<div class="ow-body">${body}</div>
+  return `<div class="ow">${head}${findBox(b)}${tabs}<div class="ow-body">${body}</div>
     <div class="ow-foot"><span class="hint-text" id="owReq"></span><span class="spacer"></span><button class="btn ${sell ? "ow-sell" : "ow-buy"}" id="owSend">${t.tab === "gtt" ? "Place GTT" : sell ? "Sell" : "Buy"}</button><button class="btn" id="owReset">Cancel</button></div>
     <div class="hint-text ow-avail">Available ${funds == null ? "—" : inr(funds)}</div></div>`;
 }
 
+let ticketTimer = null;
 function bindTicket(el, app, panels, b) {
   const t = T();
   const q = (s) => el.querySelector(s);
+  const redraw = () => drawPortfolio(el, app, panels, b, view.data[b]);
+  clearInterval(ticketTimer);
+  // Search every stock and F&O contract Kotak lists.
+  if (q("#owFind")) {
+    let wait = null;
+    q("#owFind").oninput = (e) => {
+      clearTimeout(wait);
+      const text = e.target.value.trim(), box = q("#owFound");
+      if (!text) return (box.innerHTML = "");
+      wait = setTimeout(async () => {
+        box.textContent = "Searching…";
+        try {
+          const list = await api.get(`/api/broker/${encodeURIComponent(b)}/contracts?q=${encodeURIComponent(text)}`);
+          if (q("#owFind")?.value.trim() !== text) return;
+          box.innerHTML = list.length
+            ? list.map((c, i) => `<button type="button" data-found="${i}"><b>${esc(contractName(c))}</b> <span class="muted">${SEG[c.seg]}${c.kind === "fo" ? ` · lot ${c.lot}` : ""}</span></button>`).join("")
+            : '<span class="hint-text">Nothing matches.</span>';
+          box.querySelectorAll("[data-found]").forEach((x) => (x.onclick = () => (pick(list[x.dataset.found]), redraw())));
+        } catch (err) {
+          box.textContent = err.message;
+        }
+      }, 250);
+    };
+  }
   const send = q("#owSend");
   if (!send) return;
-  const sym = app.active?.cfg.symbol;
-  const ltp = () => quotesFor[sym]?.nse || app.prices[sym] || null;
-  const redraw = () => drawPortfolio(el, app, panels, b, view.data[b]);
+  const c = pickedOf(b);
+  const chartSym = app.active?.cfg.symbol;
+  const sym = c ? keyOf(c) : chartSym;
+  const ltp = () => quotesFor[sym]?.nse || app.prices?.[sym] || null;
+  if (q("#owChart")) q("#owChart").onclick = () => (pick(null), redraw());
+  if (q("#owOpenChart")) q("#owOpenChart").onclick = () => app.setSymbol(`${c.seg === "bse_fo" ? "BFO" : "NFO"}:${c.trd}`);
+  if (q("#owToBse"))
+    q("#owToBse").onclick = async () => {
+      const stock = ticker(chartSym).replace(/\.NS$/, "");
+      const list = await api.get(`/api/broker/${encodeURIComponent(b)}/contracts?q=${encodeURIComponent(stock)}`).catch(() => []);
+      const found = list.find((x) => x.seg === "bse_cm" && x.name === stock);
+      if (!found) return app.toast(`${stock} wasn't found on BSE.`, "err");
+      pick(found);
+      redraw();
+    };
   const read = () => {
     if (q("#owQty")) t.qty = Number(q("#owQty").value);
     if (q("#owPrice") && !q("#owPrice").disabled) t.price = q("#owPrice").value === "" ? null : Number(q("#owPrice").value);
@@ -429,16 +572,34 @@ function bindTicket(el, app, panels, b) {
     const out = q("#owReq");
     if (!out) return;
     if (!(p > 0) || !(t.qty > 0)) return (out.textContent = "");
+    if (c?.kind === "fo") return (out.textContent = c.opt !== "FUT" && t.side === "BUY" ? `Premium ${inr(p * unitsOf(t, c))}` : "Kotak checks the margin when you send");
     const full = p * t.qty;
     out.textContent = t.product === "MIS" ? `Required ≈ ${inr(full / 5)} (intraday, about 5×)` : `Required ${inr(full)}`;
   };
   // Live NSE and BSE prices in the header.
-  if (sym) {
+  const fetchPrices = async () => {
+    if (c) {
+      const r = await api.get(`/api/broker/${encodeURIComponent(b)}/fo-prices?keys=${encodeURIComponent(sym)}`);
+      return { nse: r[sym] };
+    }
     const bse = sym.replace(/\.NS$/, ".BO");
-    api.quotes([sym, bse]).then((r) => {
-      quotesFor[sym] = { nse: r[sym]?.price, bse: r[bse]?.price };
-      if (q("#owNse") && quotesFor[sym].nse) q("#owNse").textContent = `₹${fmtPrice(quotesFor[sym].nse)}`;
-      if (q("#owBse") && quotesFor[sym].bse) q("#owBse").textContent = `₹${fmtPrice(quotesFor[sym].bse)}`;
+    const r = await api.quotes([sym, bse]);
+    return { nse: r[sym]?.price, bse: r[bse]?.price };
+  };
+  const showPrices = (p) => {
+    quotesFor[sym] = p;
+    if (q("#owNse") && p.nse) q("#owNse").textContent = `₹${fmtPrice(p.nse)}`;
+    if (q("#owBse") && p.bse) q("#owBse").textContent = `₹${fmtPrice(p.bse)}`;
+  };
+  // Kept live while a broker is connected and the window is on screen.
+  if (sym && acctOf(b)?.broker === "kotak")
+    ticketTimer = setInterval(() => {
+      if (!send.isConnected) return clearInterval(ticketTimer);
+      if (!document.hidden) fetchPrices().then((p) => (showPrices(p), required()), () => {});
+    }, 3000);
+  if (sym) {
+    fetchPrices().then((r) => {
+      showPrices(r);
       const first = t.tab === "gtt" && !q('[data-leg="sl"][data-f="trigger"]')?.value;
       fillDefaults();
       // The limit price starts at the live price, like Zerodha's window.
@@ -493,26 +654,42 @@ function bindTicket(el, app, panels, b) {
 
   send.onclick = async () => {
     read();
-    if (t.tab === "regular") return sendRegular(el, app, panels, b, sym);
-    return sendGtt(el, app, panels, b, sym, ltp());
+    if (t.tab === "regular") return sendRegular(el, app, panels, b, chartSym);
+    return sendGtt(el, app, panels, b, chartSym, ltp());
+  };
+}
+
+// How an order reads in its confirmation, and what identifies it to the server.
+function orderOf(b, sym) {
+  const t = T(), c = pickedOf(b);
+  if (!c) return { label: `${t.qty} × ${ticker(sym)} (NSE)`, productText: t.product === "CNC" ? "Longterm (CNC)" : "Intraday (MIS)", warn: "", qty: t.qty };
+  const units = unitsOf(t, c);
+  return {
+    label: `${c.kind === "fo" ? `${t.qty} lot${t.qty === 1 ? "" : "s"} (${units} qty) of ` : `${units} × `}${c.trd} (${SEG[c.seg]})`,
+    productText: { CNC: "Longterm (CNC)", MIS: "Intraday (MIS)", NRML: "Overnight (NRML)" }[t.product],
+    // A sale without a holding opens a short, which carries much larger risk than buying.
+    warn: t.side === "SELL" && c.kind === "fo" ? "\n\nIf you don't already hold this, the sale OPENS A SHORT POSITION." : "",
+    qty: units,
+    contract: { seg: c.seg, token: c.token },
   };
 }
 
 async function sendRegular(el, app, panels, b, sym) {
   const t = T();
+  const order = orderOf(b, sym);
   const priceText =
     t.type === "MARKET" ? "at market price" :
     t.type === "LIMIT" ? `at limit ₹${t.price}` :
     t.type === "SL" ? `stop-loss: trigger ₹${t.trigger}, limit ₹${t.price}` :
     `stop-loss market: trigger ₹${t.trigger}`;
-  const ok = confirm(`REAL ORDER on ${nameOf(b)}\n\n${t.side} ${t.qty} × ${ticker(sym)} (NSE)\n${priceText}\n${t.product === "CNC" ? "Longterm (CNC)" : "Intraday (MIS)"}, valid for today\n\nSend this order?`);
+  const ok = confirm(`REAL ORDER on ${nameOf(b)}\n\n${t.side} ${order.label}\n${priceText}\n${order.productText}, valid for today${order.warn}\n\nSend this order?`);
   if (!ok) return;
   el.querySelector("#owSend").disabled = true;
   try {
     const res = await fetch(`/api/broker/${encodeURIComponent(b)}/order`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-qt": "1", "x-qt-live-order": "confirmed" },
-      body: JSON.stringify({ symbol: sym, side: t.side, qty: t.qty, type: t.type, product: t.product, price: t.price, trigger: t.trigger }),
+      body: JSON.stringify({ ...(order.contract || { symbol: sym }), side: t.side, qty: order.qty, type: t.type, product: t.product, price: t.price, trigger: t.trigger }),
     });
     const r = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
@@ -533,6 +710,7 @@ async function sendRegular(el, app, panels, b, sym) {
 
 async function sendGtt(el, app, panels, b, sym, ltp) {
   const t = T();
+  const order = orderOf(b, sym);
   const legOf = (key, name) => {
     const L = t[key];
     return {
@@ -547,7 +725,7 @@ async function sendGtt(el, app, panels, b, sym, ltp) {
   const line = (l) =>
     `${l.name === "trigger" ? "Trigger" : l.name === "stoploss" ? "Stop-loss" : "Target"} at ₹${l.trigger} → ${l.orderType === "MARKET" ? "market order" : `limit ₹${l.price}`}${l.trail ? `, trailing ${l.trail.type === "pct" ? `${l.trail.value}%` : `₹${l.trail.value}`} from the best price` : ""}`;
   const ok = confirm(
-    `GTT on ${nameOf(b)} (kept in Quant Terminal)\n\n${t.side} ${t.qty} × ${ticker(sym)} (NSE), ${t.product === "CNC" ? "Longterm (CNC)" : "Intraday (MIS)"}\n${legs.map(line).join("\n")}\n\nNow ₹${ltp ?? "?"}. When a trigger is hit, a REAL order is placed automatically (the app must be running and ${nameOf(b)} logged in).\n\nSave this GTT?`,
+    `GTT on ${nameOf(b)} (kept in Quant Terminal)\n\n${t.side} ${order.label}, ${order.productText}\n${legs.map(line).join("\n")}\n\nNow ₹${ltp ?? "?"}. When a trigger is hit, a REAL order is placed automatically (the app must be running and ${nameOf(b)} logged in).${order.warn}\n\nSave this GTT?`,
   );
   if (!ok) return;
   el.querySelector("#owSend").disabled = true;
@@ -555,11 +733,11 @@ async function sendGtt(el, app, panels, b, sym, ltp) {
     const res = await fetch("/api/gtt", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-qt": "1", "x-qt-live-order": "confirmed" },
-      body: JSON.stringify({ account: b, symbol: sym, side: t.side, qty: t.qty, product: t.product, kind: t.gttKind, legs }),
+      body: JSON.stringify({ account: b, ...(order.contract ? { instrument: order.contract } : { symbol: sym }), side: t.side, qty: order.qty, product: t.product, kind: t.gttKind, legs }),
     });
     const r = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
-    app.toast(`GTT saved: ${t.side} ${t.qty} ${ticker(sym)}. Quant Terminal is watching it.`);
+    app.toast(`GTT saved: ${t.side} ${order.label}. Quant Terminal is watching it.`);
     view.pane = "gtt";
     for (const key of ["sl", "tg"]) Object.assign(t[key], { trigger: null, price: null });
   } catch (e) {
@@ -581,7 +759,7 @@ async function gttHtml() {
       .join("<br>");
   const row = (g) => {
     const last = g.history?.[g.history.length - 1]?.text || "";
-    return `<tr data-s="${esc(g.symbol)}" style="cursor:pointer"><td class="l"><b>${esc(ticker(g.symbol).replace(/\.NS$/, ""))}</b></td><td class="l">${esc(g.accountName)}</td><td class="${g.side === "BUY" ? "up" : "down"}">${g.side}</td><td>${g.qty}</td><td class="l">${g.kind === "oco" ? "OCO" : "Single"} · ${g.product}</td><td class="l">${legs(g)}</td><td>${g.lastPrice ? fmtPrice(g.lastPrice) : "—"}</td><td class="l ${g.status === "needs-login" || g.status === "failed" ? "down" : g.status === "triggered" ? "up" : ""}" title="${esc(last)}">${status[g.status] || g.status}</td><td>${["active", "needs-login"].includes(g.status) ? `<button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "placing" ? "" : `<button class="btn small" data-gtt-remove="${g.id}" title="Remove from the list">×</button>`}</td></tr>`;
+    return `<tr ${g.fo ? "" : `data-s="${esc(g.symbol)}" style="cursor:pointer"`}><td class="l"><b>${esc(ticker(g.symbol).replace(/\.NS$/, ""))}</b></td><td class="l">${esc(g.accountName)}</td><td class="${g.side === "BUY" ? "up" : "down"}">${g.side}</td><td>${g.qty}</td><td class="l">${g.kind === "oco" ? "OCO" : "Single"} · ${g.product}</td><td class="l">${legs(g)}</td><td>${g.lastPrice ? fmtPrice(g.lastPrice) : "—"}</td><td class="l ${g.status === "needs-login" || g.status === "failed" ? "down" : g.status === "triggered" ? "up" : ""}" title="${esc(last)}">${status[g.status] || g.status}</td><td>${["active", "needs-login"].includes(g.status) ? `<button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "placing" ? "" : `<button class="btn small" data-gtt-remove="${g.id}" title="Remove from the list">×</button>`}</td></tr>`;
   };
   const head = `<thead><tr><th class="l">Stock</th><th class="l">Account</th><th>Side</th><th>Qty</th><th class="l">Type</th><th class="l">Triggers</th><th>LTP</th><th class="l">Status</th><th></th></tr></thead>`;
   return `<h4>GTT orders (${live.length} watching) <span class="hint-text">kept in Quant Terminal, checked every 5 seconds in market hours</span></h4>

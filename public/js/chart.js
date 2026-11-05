@@ -35,7 +35,7 @@ export const CHART_TYPES = [
   ["range", "Range bars"],
   ["kagi", "Kagi"],
   ["pnf", "Point & figure"],
-  ["orderflow", "Order flow (BTC test)"],
+  ["orderflow", "Order flow"],
 ];
 // Chart types built from price alone, with no meaningful volume per bar.
 const PRICE_ONLY = ["renko", "linebreak", "kagi", "pnf"];
@@ -479,11 +479,18 @@ export class ChartPane {
       const f = document.createElement("iframe");
       f.className = "flow-frame";
       f.title = "Order flow chart";
-      f.src = `/orderflow.html?panel=${encodeURIComponent(this.cfg.flowId)}`;
       // Clicks inside the frame don't reach this page, so it reports them to pick the active pane.
       f.onload = () => f.contentWindow.addEventListener("mousedown", () => this.app.setActive(this), true);
       this.el.appendChild(f);
       this.flowFrame = f;
+    }
+    // The panel shows this chart's symbol.
+    if (want) {
+      const src = `/orderflow.html?panel=${encodeURIComponent(this.cfg.flowId)}&symbol=${encodeURIComponent(this.cfg.symbol)}`;
+      if (this.flowFrame.dataset.src !== src) {
+        this.flowFrame.dataset.src = src;
+        this.flowFrame.src = src;
+      }
     }
   }
 

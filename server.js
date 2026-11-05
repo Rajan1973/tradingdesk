@@ -35,7 +35,24 @@ import { relaunchForProxy, proxyNote } from "./lib/proxy.js";
 const chartFeed = () => store.read("state", {}).settings?.chartFeed;
 let upstoxError = "";
 
+// Yahoo's quotes, with the live price from Kotak for Indian stocks when an account is logged in.
+async function liveQuotes(symbols) {
+  const fo = symbols.filter(brokers.isFoSymbol);
+  const out = await data.getQuotes(symbols.filter((s) => !brokers.isFoSymbol(s)));
+  const live = await brokers.kotakPrices([...Object.keys(out), ...fo]).catch(() => ({}));
+  for (const s of fo) out[s] = { error: "F&O prices need a Kotak login." };
+  for (const [s, q] of Object.entries(live)) out[s] = { ...(brokers.isFoSymbol(s) ? {} : out[s]), price: q.price, changePct: q.changePct ?? out[s]?.changePct };
+  return out;
+}
+
 async function chartCandles(symbol, tf, limit) {
+  // F&O contracts: Upstox is the one source of their history; Yahoo has none.
+  const id = String(symbol || "").trim().toUpperCase();
+  if (brokers.isFoSymbol(id)) {
+    const r = await upstox.candles(id, tf, limit);
+    if (!r) throw Object.assign(new Error(`No bars for ${id.split(":")[1]} in this timeframe.`), { status: 404 });
+    return r;
+  }
   if (chartFeed() === "upstox") {
     try {
       const r = await upstox.candles((await data.resolve(symbol)).id, tf, limit);
@@ -49,7 +66,11 @@ async function chartCandles(symbol, tf, limit) {
 }
 
 async function withBrokerPrice(r) {
-  const source = { kotak: ["Kotak", brokers.kotakLtp], upstox: ["Upstox", upstox.livePrice] }[chartFeed()];
+  const foPrice = async (symbol) => {
+    const key = await brokers.foKeyOf(symbol);
+    return (await brokers.foPrices([key]))[key];
+  };
+  const source = brokers.isFoSymbol(r.symbol) ? ["Kotak", foPrice] : { kotak: ["Kotak", brokers.kotakLtp], upstox: ["Upstox", upstox.livePrice] }[chartFeed()];
   if (!source || !gtt.marketOpen() || !r.candles?.length) return r;
   const ltp = await source[1](r.symbol).catch(() => null);
   const candles = ltp && applyLivePrice(r.candles, r.tf, ltp);
@@ -218,8 +239,20 @@ alerts.onFire((e) => broadcast("alert", e));
 // GTT orders kept in the terminal: prices from the same quotes the app uses, orders through the
 // broker accounts, and a pop-up, sound and desktop notification (the alert channel) when one fires.
 gtt.configure({
-  quotes: (syms) => data.getQuotes(syms),
-  place: (id, body, ltp) => brokers.placeOrder(id, body, ltp),
+  quotes: async (syms, live = []) => {
+    const fo = live.filter((g) => g.fo);
+    const [stocks, prices] = await Promise.all([
+      liveQuotes(syms.filter((s) => !s.startsWith("NFO:"))).catch(() => ({})),
+      fo.length ? brokers.foPrices([...new Set(fo.map((g) => `${g.fo.seg}|${g.fo.token}`))]).catch(() => ({})) : {},
+    ]);
+    for (const g of fo) stocks[g.symbol] = { price: prices[`${g.fo.seg}|${g.fo.token}`] };
+    return stocks;
+  },
+  place: (id, body, ltp) => {
+    if (!body.fo) return brokers.placeOrder(id, body, ltp);
+    if (body.allowOpen) return brokers.placeKotakOrder(id, { ...body, seg: body.fo.seg, token: body.fo.token }, ltp);
+    return brokers.placeFnoExit(id, body);
+  },
   connected: (id) => !!brokers.status().accounts.find((a) => a.id === id)?.connected,
   accountName: (id) => brokers.status().accounts.find((a) => a.id === id)?.name || id,
   brokerOf: (id) => brokers.status().accounts.find((a) => a.id === id)?.broker || "",
@@ -289,8 +322,13 @@ async function handle(req, res) {
     if (p === "/api/probe") return send(res, 200, await data.probeAll());
     if (p === "/api/resolve")
       return send(res, 200, await data.resolve(q.symbol));
-    if (p === "/api/search")
-      return send(res, 200, await (q.market === "india" ? data.searchIndia(q.q) : data.search(q.q)));
+    if (p === "/api/search") {
+      const found = await (q.market === "india" ? data.searchIndia(q.q) : data.search(q.q));
+      if (q.market !== "india") return send(res, 200, found);
+      const fo = brokers.kotakFoResults(q.q);
+      // A strike, CE, PE or FUT means a contract is wanted, so those come first.
+      return send(res, 200, /\d|\b(CE|PE|FUT)\b/i.test(q.q) ? [...fo, ...found] : [...found, ...fo]);
+    }
     if (p === "/api/spread") return send(res, 200, await data.getSpread(q.symbol));
     if (p === "/api/candles")
       return send(res, 200, await withBrokerPrice(await chartCandles(q.symbol, q.tf || "1D", q.limit)));
@@ -298,7 +336,7 @@ async function handle(req, res) {
       return send(
         res,
         200,
-        await data.getQuotes(
+        await liveQuotes(
           (q.symbols || "").split(",").filter(Boolean).slice(0, 200),
         ),
       );
@@ -426,12 +464,22 @@ async function handle(req, res) {
         brokers.logout(acctId);
         return send(res, 200, { ok: true });
       }
+      if (action === "fo-prices") {
+        const keys = String(q.keys || "").split(",").filter((k) => /^(nse|bse)_(fo|cm)\|\d+$/.test(k)).slice(0, 50);
+        return send(res, 200, keys.length ? await brokers.foPrices(keys) : {});
+      }
+      if (action === "contracts") return send(res, 200, await brokers.kotakSearch(q.q));
       if (action === "order" && req.method === "POST") {
         const body = await readBody(req);
         // A second header just for live orders, on top of the x-qt check every write needs.
         if (req.headers["x-qt-live-order"] !== "confirmed")
           return send(res, 403, { error: "Live orders need confirming in the order ticket." });
-        const qt = await data.getQuotes([String(body.symbol || "")]).catch(() => ({}));
+        if (body.seg) {
+          const key = `${body.seg}|${body.token}`;
+          const prices = await brokers.foPrices([key]).catch(() => ({}));
+          return send(res, 200, await brokers.placeKotakOrder(acctId, body, prices[key]));
+        }
+        const qt = await liveQuotes([String(body.symbol || "")]).catch(() => ({}));
         const ltp = Object.values(qt)[0]?.price;
         return send(res, 200, await brokers.placeOrder(acctId, body, ltp));
       }
@@ -452,6 +500,23 @@ async function handle(req, res) {
           return send(res, 400, { error: e.message });
         }
       }
+    }
+    if (p === "/api/orderflow/names") return send(res, 200, orderflow.names());
+    if (p === "/api/orderflow/bars") {
+      const w = orderflow.instrumentOf(q.symbol);
+      if (!w) return send(res, 400, { error: "Order flow works for NSE stocks and the Nifty, Bank Nifty and Sensex futures." });
+      let note = "";
+      if (!brokers.kotakReady()) note = "Log in to Kotak to record order flow.";
+      else {
+        try {
+          await orderflow.watch(w);
+        } catch (e) {
+          return send(res, 400, { error: e.message });
+        }
+      }
+      const out = orderflow.bars(w.name, q.tf || "5m", q.step ? Number(q.step) : null);
+      if (!out) return send(res, 400, { error: "Unknown timeframe or row size." });
+      return send(res, 200, { ...out, note, recording: brokers.kotakReady() && gtt.marketOpen(), future: !!w.future });
     }
     if (p === "/api/cryptoflow/status") return send(res, 200, cryptoflow.status);
     if (p === "/api/cryptoflow/sync" && req.method === "POST") {
@@ -476,7 +541,26 @@ async function handle(req, res) {
         const body = await readBody(req);
         const acct = brokers.status().accounts.find((a) => a.id === body.account);
         if (!acct) return send(res, 400, { error: "Choose one of your broker accounts." });
-        const qt = await data.getQuotes([String(body.symbol || "")]).catch(() => ({}));
+        if (body.tradingSymbol) {
+          // A stop on an F&O position: its details and side come from Kotak, not from the browser.
+          const pos = await brokers.kotakFoPosition(body.account, body.tradingSymbol, body.product);
+          const watching = gtt.list().filter((g) => g.account === body.account && g.fo?.tradingSymbol === body.tradingSymbol && g.product === pos.product && ["active", "needs-login", "placing"].includes(g.status));
+          const already = watching.reduce((sum, g) => sum + g.qty, 0);
+          if (Number(body.qty) + already > pos.room)
+            return send(res, 400, { error: `Only ${Math.max(0, pos.room - already)} of ${body.tradingSymbol} can still get a stop: the rest has exit orders or other stops on it.` });
+          const key = `${pos.fo.seg}|${pos.fo.token}`;
+          const ltp = (await brokers.foPrices([key]))[key];
+          return send(res, 200, view(gtt.add({ account: body.account, fo: pos.fo, side: pos.qty > 0 ? "SELL" : "BUY", product: pos.product, qty: Number(body.qty), kind: "single", legs: body.legs }, ltp)));
+        }
+        if (body.instrument) {
+          // From the order window: the contract's details come from Kotak's list, not the browser.
+          const c = await brokers.kotakContract(body.instrument.seg, body.instrument.token);
+          const key = `${c.seg}|${c.token}`;
+          const ltp = (await brokers.foPrices([key]))[key];
+          const fo = { seg: c.seg, token: c.token, tradingSymbol: c.trd, lot: c.lot, tick: c.tick };
+          return send(res, 200, view(gtt.add({ account: body.account, fo, allowOpen: true, side: body.side, product: body.product, qty: body.qty, kind: body.kind, legs: body.legs }, ltp)));
+        }
+        const qt = await liveQuotes([String(body.symbol || "")]).catch(() => ({}));
         return send(res, 200, view(gtt.add(body, Object.values(qt)[0]?.price)));
       }
       if (p === "/api/gtt/check" && req.method === "POST") {

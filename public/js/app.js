@@ -404,6 +404,25 @@ class App {
       this.persist();
     };
     $("#settingsBtn").onclick = () => this.openSettings();
+    // The side panel: hidden or shown from the top bar or Ctrl+B, remembered on this browser.
+    const setSide = (hidden) => {
+      document.querySelector(".side").hidden = hidden;
+      $("#sideBtn").setAttribute("aria-pressed", String(!hidden));
+      try {
+        localStorage.setItem("qt.sideHidden", hidden ? "1" : "");
+      } catch {}
+    };
+    const toggleSide = () => setSide(!document.querySelector(".side").hidden);
+    $("#sideBtn").onclick = toggleSide;
+    document.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "b") {
+        e.preventDefault();
+        toggleSide();
+      }
+    });
+    try {
+      setSide(localStorage.getItem("qt.sideHidden") === "1");
+    } catch {}
   }
 
   syncToolbar() {

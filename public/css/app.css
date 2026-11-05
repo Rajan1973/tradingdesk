@@ -1124,6 +1124,13 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .br-tabs .n { font-size: 11px; color: var(--muted); background: var(--accent-soft); border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
 .br-tabs button.on .n { color: var(--accent); }
 .br-pane[hidden] { display: none; }
+.side[hidden] { display: none; }
+.ow-ex .btn { color: #1f2937; background: #fff; }
+.ow-find { padding: 8px 10px 0; }
+.ow-find input { width: 100%; }
+#owFound { display: flex; flex-direction: column; max-height: 180px; overflow-y: auto; }
+#owFound button { text-align: left; padding: 4px 6px; background: none; border: 0; border-bottom: 1px solid var(--border); color: inherit; cursor: pointer; font-size: 12px; }
+#owFound button:hover, #owFound button:focus-visible { background: var(--hover, rgba(127, 127, 127, 0.12)); }
 /* "Charting by Rajan" mark, bottom-left of every chart */
 .chart-brand { position: absolute; left: 8px; bottom: 34px; z-index: 3; display: flex; align-items: center; gap: 6px; pointer-events: none; user-select: none; opacity: 0.85; }
 .chart-brand img { height: 22px; width: auto; }

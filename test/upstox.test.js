@@ -106,3 +106,10 @@ test("a live price moves the current bar, or starts one on the same 09:15 grid",
   assert.equal(applyLivePrice([day], "1D", 103, open + 600).at(-1).close, 103);
   assert.equal(applyLivePrice([day], "1D", 103, open + 86400), null); // today's daily bar comes from the source
 });
+
+test("F&O chart symbols pass the symbol check, including an ampersand", async () => {
+  const { resolve } = await import("../lib/providers.js");
+  assert.equal((await resolve("nfo:nifty26n0923900ce")).id, "NFO:NIFTY26N0923900CE");
+  assert.equal((await resolve("NFO:M&M26NOV3000CE")).id, "NFO:M&M26NOV3000CE");
+  await assert.rejects(resolve("NFO:A/../B&C"));
+});

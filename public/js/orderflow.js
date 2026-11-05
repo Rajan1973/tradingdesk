@@ -1,6 +1,7 @@
-// The order flow test screen: footprint cells on a candle chart, with delta and cumulative delta
-// below. History comes from the server; live trades come straight from Binance in the browser.
-import { addTrade, divergence, imbalances, sessionDelta, totals, TF_MS } from "/lib/footprint.js";
+// The order flow screen: footprint cells on a candle chart, with delta and cumulative delta below.
+// Bitcoin: history from the server, live trades straight from Binance in the browser. Indian stocks
+// and index futures: bars from the Kotak recording on this computer, refreshed every few seconds.
+import { addTrade, divergence, imbalances, sessionDelta, STEPS, STOCK_STEPS, totals, TF_MS } from "/lib/footprint.js";
 import { sessionProfiles } from "/lib/market-profile.js";
 import { drawProfiles } from "/js/market-profile-draw.js";
 
@@ -9,15 +10,37 @@ const $ = (id) => document.getElementById(id);
 const IST = 19800; // the chart's clock shows India time
 const HOSTS = ["wss://stream.binance.com:9443/ws/", "wss://data-stream.binance.vision/ws/"];
 const UP = "#26a69a", DOWN = "#ef5350", DIVERGE = "#9333ea";
-const panel = new URLSearchParams(location.search).get("panel");
-const SAVED = panel ? `qt.orderflow.${panel}` : "qt.orderflow";
+const params = new URLSearchParams(location.search);
+const panel = params.get("panel");
 if (panel) document.body.classList.add("embed");
+// A panel shows its chart's symbol; the full screen remembers the last one picked.
+let picked = params.get("symbol");
+if (!picked) {
+  try {
+    picked = localStorage.getItem("qt.orderflow.symbol");
+  } catch { /* Bitcoin does */ }
+}
+picked ||= "BTC";
+const isBtc = /(^|:)BTC/i.test(picked);
+const showName = isBtc ? "BTC" : picked.toUpperCase().replace(/^YAHOO:/, "").replace(/\.(NS|BO)$/, "");
+const UNIT = isBtc ? "BTC" : "qty";
+const RS = isBtc ? "$" : "₹";
+const SAVED = `qt.orderflow${panel ? `.${panel}` : ""}${isBtc ? "" : `.${showName}`}`;
 
-const view = { tf: "5m", step: 100, view: "bidask", ratio: 3, minQty: 0.5 };
+$("step").innerHTML = (isBtc ? STEPS : STOCK_STEPS).map((v) => `<option value="${v}">${RS}${v}</option>`).join("");
+$("sym").value = showName;
+$("minLabel").textContent = `Min ${UNIT}`;
+$("title").textContent = `Order flow · ${isBtc ? "BTCUSDT" : showName}`;
+$("note").textContent = isBtc
+  ? "Bitcoin trades carry a true buyer or seller flag, so this is exact."
+  : "An estimate: Kotak's quotes arrive about a second apart and don't say who was the buyer or seller. History starts when recording began; nothing older exists. For judging the screens, not for trading signals.";
+document.title = `${isBtc ? "BTC" : showName} order flow`;
+
+const view = { tf: "5m", step: isBtc ? 100 : null, view: "bidask", ratio: 3, minQty: isBtc ? 0.5 : 0 };
 try {
   Object.assign(view, JSON.parse(localStorage.getItem(SAVED) || "{}"));
 } catch { /* the defaults do */ }
-for (const k of ["tf", "step", "view", "ratio", "minQty"]) $(k).value = view[k];
+for (const k of ["tf", "step", "view", "ratio", "minQty"]) if (view[k] != null) $(k).value = view[k];
 const isProfile = () => view.view === "profile";
 const tfNow = () => (isProfile() ? "30m" : view.tf); // Market Profile prints one letter per 30 minutes
 
@@ -33,7 +56,7 @@ const chart = LW.createChart($("chart"), {
   rightPriceScale: { borderColor: "#e5e7eb" },
   crosshair: { mode: LW.CrosshairMode.Normal },
 });
-const candles = chart.addSeries(LW.CandlestickSeries, { upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false, priceFormat: { type: "price", precision: 1, minMove: 0.1 } });
+const candles = chart.addSeries(LW.CandlestickSeries, { upColor: UP, downColor: DOWN, wickUpColor: UP, wickDownColor: DOWN, borderVisible: false, priceFormat: isBtc ? { type: "price", precision: 1, minMove: 0.1 } : { type: "price", precision: 2, minMove: 0.05 } });
 const qtyFormat = { type: "volume" };
 const deltaSeries = chart.addSeries(LW.HistogramSeries, { priceFormat: qtyFormat, title: "Delta", priceLineVisible: false, lastValueVisible: true }, 1);
 const cvdSeries = chart.addSeries(LW.LineSeries, { color: "#4338ca", lineWidth: 1.5, priceFormat: qtyFormat, title: "CVD", priceLineVisible: false }, 2);
@@ -42,6 +65,7 @@ const ts = chart.timeScale();
 const qty = (v) => {
   if (!v) return "·";
   const a = Math.abs(v);
+  if (!isBtc && a < 1000) return String(v);
   return a >= 1000 ? `${(v / 1000).toFixed(1)}k` : a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : v.toFixed(2);
 };
 
@@ -211,7 +235,7 @@ deltaSeries.attachPrimitive({
             ctx.textAlign = "right";
             ctx.textBaseline = "top";
             ctx.fillStyle = sum >= 0 ? "#00796b" : "#c62828";
-            ctx.fillText(`Session delta ${sum >= 0 ? "+" : ""}${qty(sum)} BTC`, mediaSize.width - 8, 6);
+            ctx.fillText(`Session delta ${sum >= 0 ? "+" : ""}${qty(sum)}${isBtc ? " BTC" : ""}`, mediaSize.width - 8, 6);
           }),
       }),
     },
@@ -294,14 +318,30 @@ setInterval(() => {
 
 // ---------- data ----------
 async function load({ keepView = true } = {}) {
-  const r = await fetch(`/api/cryptoflow/bars?tf=${tfNow()}&step=${view.step}`);
-  if (!r.ok) throw new Error(`Couldn't read the stored data (HTTP ${r.status}).`);
-  const data = await r.json();
+  const r = await fetch(
+    isBtc
+      ? `/api/cryptoflow/bars?tf=${tfNow()}&step=${view.step}`
+      : `/api/orderflow/bars?symbol=${encodeURIComponent(picked)}&tf=${tfNow()}${view.step ? `&step=${view.step}` : ""}`,
+  );
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || `Couldn't read the stored data (HTTP ${r.status}).`);
+  if (!isBtc) {
+    view.step = data.step;
+    $("step").value = data.step;
+    recording = data;
+    // Between new bars only the last one changes, so the chart isn't rebuilt every few seconds.
+    if (loaded && keepView && bars.length && data.bars.length === bars.length && data.bars[0].at === bars[0].at) {
+      bars = data.bars;
+      byAt = new Map(bars.map((b) => [b.at, b]));
+      dirty = true;
+      return;
+    }
+  }
   const range = keepView && loaded ? ts.getVisibleRange() : null;
   loaded = true;
   bars = data.bars;
   byAt = new Map(bars.map((b) => [b.at, b]));
-  through = data.through;
+  through = data.through ?? 0;
   for (const tr of live) addLive(tr);
   setAll();
   if (range) ts.setVisibleRange(range);
@@ -339,7 +379,20 @@ function connect(host = 0) {
   };
 }
 
-let needSync = true, wasRunning = false, lastLoad = 0;
+let needSync = true, wasRunning = false, lastLoad = 0, recording = null;
+
+// Indian stocks: new bars come from the server. A newly opened stock begins recording here.
+async function tickStock() {
+  const el = $("state");
+  try {
+    await load();
+    el.className = recording.note ? "bad" : recording.recording ? "live" : "";
+    el.textContent = recording.note || `${recording.recording ? "● Recording" : "Market closed"}${recording.future ? " · nearest future" : ""} · ${bars.length} bars`;
+  } catch (e) {
+    el.className = "bad";
+    el.textContent = e.message;
+  }
+}
 
 async function post() {
   await fetch("/api/cryptoflow/sync", { method: "POST", headers: { "x-qt": "1" } });
@@ -376,8 +429,10 @@ async function tick() {
   }
 }
 
-setInterval(tick, 5000);
-setInterval(() => (needSync = true), 60000); // keeps the local copy up to date while this is open
+if (isBtc) {
+  setInterval(tick, 5000);
+  setInterval(() => (needSync = true), 60000); // keeps the local copy up to date while this is open
+} else setInterval(tickStock, 3000);
 
 // ---------- controls ----------
 function save() {
@@ -392,13 +447,28 @@ for (const id of ["tf", "step", "view", "ratio", "minQty"]) {
     save();
     $("tf").disabled = isProfile();
     $("hint").textContent = "";
-    const newBars = id === "tf" || (id === "view" && wasProfile !== isProfile());
-    if (newBars || id === "step") await load({ keepView: !newBars }).catch((e) => ($("state").textContent = e.message));
+    const newBars = id === "tf" || id === "step" || (id === "view" && wasProfile !== isProfile());
+    if (newBars) await load({ keepView: id === "step" }).catch((e) => ($("state").textContent = e.message));
     syncCandleColors();
     requestDraw();
   };
 }
 $("zoom").onclick = latest;
+
+// Change the symbol on the full screen. A panel follows its chart instead.
+$("sym").onchange = () => {
+  const next = $("sym").value.trim().toUpperCase();
+  if (!next || next === showName) return;
+  try {
+    localStorage.setItem("qt.orderflow.symbol", next);
+  } catch { /* only a convenience */ }
+  params.set("symbol", next);
+  location.search = params.toString();
+};
+fetch("/api/orderflow/names")
+  .then((r) => r.json())
+  .then((list) => ($("symList").innerHTML = ["BTC", ...list].map((n) => `<option value="${n}">`).join("")))
+  .catch(() => {});
 
 chart.subscribeCrosshairMove((p) => {
   const b = p.logical != null ? bars[Math.round(p.logical)] : null;
@@ -414,5 +484,7 @@ chart.subscribeCrosshairMove((p) => {
 
 $("tf").disabled = isProfile();
 syncCandleColors();
-connect();
-tick();
+if (isBtc) {
+  connect();
+  tick();
+} else tickStock();

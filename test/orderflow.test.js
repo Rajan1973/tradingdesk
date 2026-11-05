@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { flow, toRow } from "../lib/orderflow.js";
+import { flow, instrumentOf, toRow, trades } from "../lib/orderflow.js";
 import { parseTrade } from "../lib/cryptoflow.js";
 import { addTrade, mergeBars, totals, imbalances, sessionDelta, divergence } from "../public/lib/footprint.js";
 import { buildProfile, sessionProfiles, niceStep, profileOptions } from "../public/lib/market-profile.js";
@@ -34,6 +34,24 @@ test("no known side yet stays unknown; a falling day counter is ignored", () => 
   const { minutes, unknown } = flow([q(0, 100, 10, 0, 0), q(1000, 100, 15, 0, 0), q(2000, 100, 3, 0, 0)]);
   assert.equal(unknown, 5);
   assert.equal(minutes.length, 0);
+});
+
+test("any stock or index maps to what gets recorded, and nothing else does", () => {
+  assert.deepEqual(instrumentOf("YAHOO:RELIANCE.NS"), { name: "RELIANCE", seg: "nse_cm", stock: "RELIANCE" });
+  assert.equal(instrumentOf(" reliance ").name, "RELIANCE");
+  assert.equal(instrumentOf("YAHOO:M&M.BO").name, "M&M");
+  assert.deepEqual(instrumentOf("YAHOO:^NSEI"), { name: "NIFTY", seg: "nse_fo", future: "NIFTY" });
+  assert.equal(instrumentOf("NIFTY").future, "NIFTY");
+  assert.equal(instrumentOf("^BSESN").seg, "bse_fo");
+  for (const bad of ["../../secret", "BINANCE:BTCUSDT", "", "A/B"]) assert.equal(instrumentOf(bad), null, bad);
+});
+
+test("reading a recording in parts gives the same trades as reading it whole", () => {
+  const rows = [q(0, 100, 1000, 99, 101), q(1000, 101, 1100, 100, 102), q(2000, 100, 1130, 99, 101), q(3000, 100.5, 1140, 100, 101), q(4000, 100.5, 1145, 100, 101)];
+  const state = { prev: null, side: 0 };
+  const parts = [...trades(rows.slice(0, 2), state).list, ...trades(rows.slice(2), state).list];
+  assert.deepEqual(parts, trades(rows).list);
+  assert.deepEqual(parts.at(-1), { t: 4000, price: 100.5, qty: 5, isSell: false });
 });
 
 test("a Kotak quote becomes a row of numbers", () => {

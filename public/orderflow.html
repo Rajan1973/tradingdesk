@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Order Flow Test</title>
+<title>Order Flow</title>
 <style>
   :root { --bg: #fff; --ink: #1f2937; --muted: #6b7280; --line: #e5e7eb; --buy: #00796b; --sell: #c62828; --warn: #fff7e0; }
   * { box-sizing: border-box; }
@@ -25,7 +25,8 @@
   #read b.dn { color: var(--sell); }
   #chart { flex: 1; min-height: 320px; position: relative; }
   /* Inside a chart panel: every line of height goes to the chart. */
-  .embed #note, .embed h1 { display: none; }
+  .embed #note, .embed h1, .embed #symWrap { display: none; }
+  #sym { width: 120px; text-transform: uppercase; }
   .embed header { padding: 4px 6px; gap: 3px 8px; font-size: 12px; }
   .embed #read { padding: 2px 6px; font-size: 12px; min-height: 20px; }
   .embed #chart { min-height: 100px; }
@@ -39,17 +40,18 @@
 </head>
 <body>
 <header>
-  <h1>Order flow test · BTCUSDT</h1>
+  <h1 id="title">Order flow</h1>
+  <label id="symWrap">Symbol <input id="sym" list="symList" autocomplete="off" title="Type an NSE stock, NIFTY, BANKNIFTY, SENSEX or BTC, then press Enter" /><datalist id="symList"></datalist></label>
   <label>Timeframe <select id="tf"><option>1m</option><option selected>5m</option><option>15m</option><option>30m</option><option>1h</option><option>4h</option></select></label>
-  <label>Row size <select id="step"><option value="5">$5</option><option value="10">$10</option><option value="25">$25</option><option value="50">$50</option><option value="100" selected>$100</option><option value="250">$250</option></select></label>
+  <label>Row size <select id="step"></select></label>
   <label>View <select id="view"><option value="bidask">Sell × Buy</option><option value="delta">Delta</option><option value="volume">Volume</option><option value="profile">Market Profile</option><option value="candles">Candles only</option></select></label>
   <label class="roomy">Imbalance ratio <select id="ratio"><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
-  <label class="roomy">Min BTC <input id="minQty" type="number" min="0" step="0.1" value="0.5" /></label>
+  <label class="roomy"><span id="minLabel">Min BTC</span> <input id="minQty" type="number" min="0" step="0.1" value="0.5" /></label>
   <button class="roomy" id="zoom" title="Jump to the newest bars, zoomed in so the numbers show">Latest, zoomed in</button>
   <span id="hint"></span>
   <span id="state" role="status">Starting…</span>
 </header>
-<div id="note">Test data: Bitcoin trades carry a true buyer or seller flag, so this shows how accurate footprints look. NSE data will be an estimate. For judging the screens, not for trading signals.</div>
+<div id="note"></div>
 <div id="read">Move the mouse over a bar for its numbers.</div>
 <div id="chart"></div>
 <script src="/vendor/lightweight-charts.standalone.production.js"></script>
