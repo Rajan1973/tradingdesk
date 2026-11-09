@@ -315,6 +315,11 @@ function drawPortfolio(el, app, panels, b, d) {
   );
   bindTicket(el, app, panels, b);
   drawGtts(el, app, panels, b);
+  clearInterval(gttTimer);
+  gttTimer = setInterval(() => {
+    if (!box.isConnected) return clearInterval(gttTimer);
+    if (view.pane === "gtt" && !document.hidden) drawGtts(el, app, panels, b);
+  }, 5000);
   box.querySelectorAll("[data-pos-menu]").forEach(
     (x) =>
       (x.onclick = (e) => {
@@ -867,10 +872,46 @@ async function sendGtt(el, app, panels, b, sym, ltp) {
 }
 
 // ---------- GTT list ----------
+// Each account's open positions, read at most once a minute, for the GTT list's P&L.
+const posCache = {};
+async function positionsOf(acct) {
+  const hit = posCache[acct];
+  if (hit && Date.now() - hit.at < 60000) return hit.list;
+  const pf = await api.get(`/api/broker/${encodeURIComponent(acct)}/portfolio`).catch(() => null);
+  const list = pf?.positions || hit?.list || [];
+  posCache[acct] = { at: Date.now(), list };
+  return list;
+}
+
 async function gttHtml() {
   const list = await api.get("/api/gtt").catch(() => []);
   view.gtts = list;
   const live = list.filter((g) => ["active", "needs-login", "placing", "waiting-fill"].includes(g.status));
+  // The position each live GTT protects: its P&L now, at the GTT's last price, and if the stop is hit.
+  const held = {};
+  for (const acct of new Set(live.map((g) => g.account))) held[acct] = await positionsOf(acct);
+  const posOf = (g) => held[g.account]?.find((p) => p.qty && p.product === g.product && (g.fo ? p.fo?.tradingSymbol === g.fo.tradingSymbol : p.symbol === g.symbol));
+  const money = (v) => `<span class="${v >= 0 ? "up" : "down"}">${inr(v)}</span>`;
+  const pnl = (g) => {
+    const p = live.includes(g) ? posOf(g) : null;
+    if (!p || !(g.lastPrice > 0)) return "—";
+    // The broker's figure (today's net for the instrument, closed trades included), moved by the price
+    // since it was read, so it matches the broker's own app. Without one, from the average price.
+    const at = (price) => (p.pnl != null && p.ltp > 0 ? p.pnl + (price - p.ltp) * p.qty : p.avg > 0 ? (price - p.avg) * p.qty : null);
+    if (at(g.lastPrice) == null) return "—";
+    const stop = g.legs.find((l) => l.name === "stoploss" || l.name === "trigger");
+    const atStop = stop ? `<br><span class="muted">${inr(at(stop.trigger))} at the stop</span>` : "";
+    return `<span title="As your broker shows it: today's net for this instrument, including trades already closed">${money(at(g.lastPrice))}</span>${atStop}`;
+  };
+  // How far a trailing stop has moved from where it started.
+  const trailed = (g) => {
+    const l = g.legs.find((x) => x.trail?.start != null);
+    if (!l) return "—";
+    const moved = Math.abs(l.trigger - l.trail.start);
+    const step = l.trail.type === "pct" ? (l.trail.from * l.trail.value) / 100 : l.trail.value;
+    const steps = step > 0 ? Math.round(moved / step) : 0;
+    return moved > 0 ? `₹${fmtPrice(moved)} <span class="muted">(${steps} step${steps === 1 ? "" : "s"}) from ₹${fmtPrice(l.trail.start)}</span>` : `<span class="muted">Not yet, from ₹${fmtPrice(l.trail.start)}</span>`;
+  };
   const done = list.filter((g) => !["active", "needs-login", "placing", "waiting-fill"].includes(g.status)).slice(0, 15);
   const status = { active: "Watching", "needs-login": "Needs login", placing: "Placing…", "waiting-fill": "Waiting for fill", triggered: "Triggered", failed: "Order refused", cancelled: "Cancelled", expired: "Expired" };
   const legs = (g) =>
@@ -881,9 +922,9 @@ async function gttHtml() {
       .join("<br>");
   const row = (g) => {
     const last = g.history?.[g.history.length - 1]?.text || "";
-    return `<tr ${g.fo ? "" : `data-s="${esc(g.symbol)}" style="cursor:pointer"`}><td class="l"><b>${esc(ticker(g.symbol).replace(/\.NS$/, ""))}</b></td><td class="l">${esc(g.accountName)}</td><td class="${g.side === "BUY" ? "up" : "down"}">${g.side}</td><td>${g.qty}</td><td class="l">${g.kind === "oco" ? "OCO" : "Single"} · ${g.product}</td><td class="l">${legs(g)}</td><td>${g.lastPrice ? fmtPrice(g.lastPrice) : "—"}</td><td class="l ${g.status === "needs-login" || g.status === "failed" ? "down" : g.status === "triggered" ? "up" : ""}" title="${esc(last)}">${status[g.status] || g.status}</td><td>${["active", "needs-login"].includes(g.status) ? `<button class="btn small" data-gtt-edit="${g.id}">Modify</button> <button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "waiting-fill" ? `<button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "placing" ? "" : `<button class="btn small" data-gtt-remove="${g.id}" title="Remove from the list">×</button>`}</td></tr>`;
+    return `<tr ${g.fo ? "" : `data-s="${esc(g.symbol)}" style="cursor:pointer"`}><td class="l"><b>${esc(ticker(g.symbol).replace(/\.NS$/, ""))}</b></td><td class="l">${esc(g.accountName)}</td><td class="${g.side === "BUY" ? "up" : "down"}">${g.side}</td><td>${g.qty}</td><td class="l">${g.kind === "oco" ? "OCO" : "Single"} · ${g.product}</td><td class="l">${legs(g)}</td><td class="l">${trailed(g)}</td><td>${g.lastPrice ? fmtPrice(g.lastPrice) : "—"}</td><td>${pnl(g)}</td><td class="l ${g.status === "needs-login" || g.status === "failed" ? "down" : g.status === "triggered" ? "up" : ""}" title="${esc(last)}">${status[g.status] || g.status}</td><td>${["active", "needs-login"].includes(g.status) ? `<button class="btn small" data-gtt-edit="${g.id}">Modify</button> <button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "waiting-fill" ? `<button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "placing" ? "" : `<button class="btn small" data-gtt-remove="${g.id}" title="Remove from the list">×</button>`}</td></tr>`;
   };
-  const head = `<thead><tr><th class="l">Stock</th><th class="l">Account</th><th>Side</th><th>Qty</th><th class="l">Type</th><th class="l">Triggers</th><th>LTP</th><th class="l">Status</th><th></th></tr></thead>`;
+  const head = `<thead><tr><th class="l">Stock</th><th class="l">Account</th><th>Side</th><th>Qty</th><th class="l">Type</th><th class="l">Triggers</th><th class="l">Trailed</th><th>LTP</th><th>P&amp;L</th><th class="l">Status</th><th></th></tr></thead>`;
   return `<h4>GTT orders (${live.length} watching) <span class="hint-text">kept in Quant Terminal, checked every 5 seconds in market hours</span></h4>
     ${live.length ? `<table class="t">${head}<tbody>${live.map(row).join("")}</tbody></table>` : '<p class="hint-text">No active GTTs. Make one from the order window\'s GTT tab.</p>'}
     ${done.length ? `<details class="ow-done"><summary class="hint-text">Finished GTTs (${done.length})</summary><table class="t">${head}<tbody>${done.map(row).join("")}</tbody></table></details>` : ""}`;
@@ -960,10 +1001,13 @@ function openGttEdit(el, app, panels, b, g) {
   };
 }
 
+let gttTimer = null;
 async function drawGtts(el, app, panels, b) {
   const box = el.querySelector("#brGtt");
   if (!box) return;
+  const finishedOpen = box.querySelector("details.ow-done")?.open;
   box.innerHTML = await gttHtml();
+  if (finishedOpen && box.querySelector("details.ow-done")) box.querySelector("details.ow-done").open = true;
   const n = el.querySelector("#brGttCount");
   if (n) n.textContent = view.gtts.filter((g) => ["active", "needs-login", "placing", "waiting-fill"].includes(g.status)).length;
   box.querySelectorAll("tr[data-s]").forEach((tr) => (tr.onclick = (e) => !e.target.closest("button") && app.setSymbol(tr.dataset.s)));
