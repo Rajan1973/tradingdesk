@@ -1,5 +1,5 @@
 // One chart: candles + volume + any number of indicators, drawings, compare symbols, replay and live data.
-import { api, fmtPrice, fmtPct, esc, ticker, exchange } from "./api.js";
+import { api, fmtPrice, fmtPct, esc, ticker, exchange, foContract } from "./api.js";
 import { BY_ID, compute, periodKey } from "../lib/indicators.js";
 import {
   parseTf,
@@ -495,6 +495,8 @@ export class ChartPane {
   }
 
   async load({ keepView = false } = {}) {
+    // A contract saved as a stock (YAHOO:NIFTY26NOVFUT.NS) opens as the contract.
+    if (/^YAHOO:.+\.NS$/.test(this.cfg.symbol) && foContract(this.cfg.symbol)) this.cfg.symbol = foContract(this.cfg.symbol);
     this.syncOrderFlow();
     const token = (this.loadToken = {});
     this.stopLive();

@@ -43,7 +43,12 @@ test("any stock or index maps to what gets recorded, and nothing else does", () 
   assert.deepEqual(instrumentOf("YAHOO:^NSEI"), { name: "NIFTY", seg: "nse_fo", future: "NIFTY" });
   assert.equal(instrumentOf("NIFTY").future, "NIFTY");
   assert.equal(instrumentOf("^BSESN").seg, "bse_fo");
-  for (const bad of ["../../secret", "BINANCE:BTCUSDT", "", "A/B"]) assert.equal(instrumentOf(bad), null, bad);
+  for (const bad of ["../../secret", "BINANCE:BTCUSDT", "", "A/B", "NFO:../X"]) assert.equal(instrumentOf(bad), null, bad);
+  // F&O contracts: this month's index future shares the index's recording; others record on their own.
+  const nov = Date.UTC(2026, 10, 9, 6);
+  assert.equal(instrumentOf("NFO:NIFTY26NOVFUT", nov).name, "NIFTY");
+  assert.deepEqual(instrumentOf("NFO:NIFTY26DECFUT", nov), { name: "NIFTY26DECFUT", seg: "nse_fo", contract: "NIFTY26DECFUT" });
+  assert.deepEqual(instrumentOf("BFO:SENSEX26N1376000CE", nov), { name: "SENSEX26N1376000CE", seg: "bse_fo", contract: "SENSEX26N1376000CE" });
 });
 
 test("reading a recording in parts gives the same trades as reading it whole", () => {

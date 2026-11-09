@@ -542,7 +542,7 @@ async function handle(req, res) {
     if (p === "/api/orderflow/names") return send(res, 200, orderflow.names());
     if (p === "/api/orderflow/bars") {
       const w = orderflow.instrumentOf(q.symbol);
-      if (!w) return send(res, 400, { error: "Order flow works for NSE stocks and the Nifty, Bank Nifty and Sensex futures." });
+      if (!w) return send(res, 400, { error: "Order flow works for NSE stocks, the Nifty, Bank Nifty and Sensex futures, and NFO / BFO contracts." });
       let note = "";
       if (!brokers.kotakReady()) note = "Log in to Kotak to record order flow.";
       else {
@@ -554,7 +554,7 @@ async function handle(req, res) {
       }
       const out = orderflow.bars(w.name, q.tf || "5m", q.step ? Number(q.step) : null);
       if (!out) return send(res, 400, { error: "Unknown timeframe or row size." });
-      return send(res, 200, { ...out, note, recording: brokers.kotakReady() && gtt.marketOpen(), future: !!w.future });
+      return send(res, 200, { ...out, note, recording: brokers.kotakReady() && gtt.marketOpen(), future: !!(w.future || w.contract) });
     }
     if (p === "/api/cryptoflow/status") return send(res, 200, cryptoflow.status);
     if (p === "/api/cryptoflow/sync" && req.method === "POST") {

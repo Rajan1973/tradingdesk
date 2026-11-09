@@ -90,3 +90,12 @@ export const ticker = (id) => {
   return s.split(":").pop();
 };
 export const exchange = (id) => String(id || "").split(":")[0];
+
+// F&O trading symbols as brokers write them: NIFTY26NOVFUT, NIFTY26NOV25000CE, weekly NIFTY26N0923900CE.
+// Typed bare (or saved as a .NS stock by mistake), they open the NFO / BFO contract instead.
+const FO_NAME = /^[A-Z&\-]+\d{2}(?:[A-Z]{3}|[1-9OND]\d{2})(?:FUT|\d+(?:\.\d+)?(?:CE|PE))$/;
+export function foContract(sym) {
+  const s = String(sym || "").trim().toUpperCase().replace(/^YAHOO:/, "").replace(/\.NS$/, "");
+  if (!FO_NAME.test(s)) return null;
+  return `${/^(SENSEX|BANKEX)/.test(s) ? "BFO" : "NFO"}:${s}`;
+}

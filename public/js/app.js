@@ -1,4 +1,4 @@
-import { api, download, esc, ticker, exchange } from "./api.js";
+import { api, download, esc, ticker, exchange, foContract } from "./api.js";
 import { ChartPane, CHART_TYPES, newUid } from "./chart.js";
 import { LAYOUTS, LAYOUT_BY_ID, applyLayout, layoutIcon } from "./layouts.js";
 import { TOOLS } from "./drawings.js";
@@ -550,9 +550,10 @@ class App {
       q.focus();
       run();
     };
-    // In India mode a bare code typed and entered opens its NSE listing.
+    // In India mode a bare code typed and entered opens its NSE listing, or its F&O contract.
     const raw = () => {
       const v = q.value.trim().toUpperCase();
+      if (market === "india" && foContract(v)) return foContract(v);
       return market === "india" && /^[A-Z0-9&\-]+$/.test(v) ? `YAHOO:${v}.NS` : v;
     };
     let sel = 0,
