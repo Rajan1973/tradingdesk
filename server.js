@@ -259,6 +259,13 @@ gtt.configure({
   notify: (e) => broadcast("alert", { ...e, at: new Date().toISOString() }),
   orderFill: (id, orderId) => brokers.orderFill(id, orderId),
 });
+// Why an exit was refused, in plain words: what's open, what's already covering it, and what to do.
+const blocked = (open, room, inGtts, name) => {
+  const atBroker = open - room;
+  const parts = [atBroker > 0 ? `${atBroker} with an exit order already working at the broker` : "", inGtts > 0 ? `${inGtts} with another exit GTT in Quant Terminal` : ""].filter(Boolean).join(" and ");
+  const left = Math.max(0, room - inGtts);
+  return `Only ${left} of your ${open} ${name} can get this exit: ${parts || "the rest is covered"}. Cancel ${atBroker > 0 ? "that order" : "that GTT"} first, or lower the quantity, so both can't close the same position.`;
+};
 // Exit GTTs already watching a position, so a second one can't sell (or buy back) more than it holds.
 const exitsOn = (account, match, product) =>
   gtt.list().filter((g) => g.account === account && g.product === product && match(g) && (g.exit || (g.fo && !g.allowOpen)) && ["active", "needs-login", "placing"].includes(g.status)).reduce((sum, g) => sum + g.qty, 0);
@@ -578,7 +585,7 @@ async function handle(req, res) {
           const watching = gtt.list().filter((g) => g.account === body.account && g.fo?.tradingSymbol === body.tradingSymbol && g.product === pos.product && ["active", "needs-login", "placing"].includes(g.status));
           const already = watching.reduce((sum, g) => sum + g.qty, 0);
           if (Number(body.qty) + already > pos.room)
-            return send(res, 400, { error: `Only ${Math.max(0, pos.room - already)} of ${body.tradingSymbol} can still get a stop: the rest has exit orders or other stops on it.` });
+            return send(res, 400, { error: blocked(Math.abs(pos.qty), pos.room, already, body.tradingSymbol) });
           const key = `${pos.fo.seg}|${pos.fo.token}`;
           const ltp = (await brokers.foPrices([key]))[key];
           return send(res, 200, view(gtt.add({ account: body.account, fo: pos.fo, side: pos.qty > 0 ? "SELL" : "BUY", product: pos.product, qty: Number(body.qty), kind: body.kind === "oco" ? "oco" : "single", legs: body.legs }, ltp)));
@@ -588,7 +595,7 @@ async function handle(req, res) {
           const product = String(body.product || "").toUpperCase();
           const pos = await brokers.stockPosition(body.account, body.exitSymbol, product);
           const left = pos.room - exitsOn(body.account, (g) => g.symbol === body.exitSymbol, product);
-          if (Number(body.qty) > left) return send(res, 400, { error: `Only ${Math.max(0, left)} can still get an exit: the rest has exit orders or another exit GTT on it.` });
+          if (Number(body.qty) > left) return send(res, 400, { error: blocked(Math.abs(pos.qty), pos.room, pos.room - left, body.exitSymbol.replace(/^YAHOO:|\.NS$/g, "")) });
           const qt = await liveQuotes([body.exitSymbol]).catch(() => ({}));
           return send(res, 200, view(gtt.add({ account: body.account, symbol: body.exitSymbol, exit: true, side: pos.side, product, qty: Number(body.qty), kind: body.kind === "oco" ? "oco" : "single", legs: body.legs }, Object.values(qt)[0]?.price)));
         }

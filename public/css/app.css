@@ -1118,6 +1118,7 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .ow-pct input { width: 48px; }
 .ow-pct.off input { opacity: 0.5; }
 .ow-info { cursor: help; color: var(--accent); }
+.ow-err { color: var(--down); background: rgba(242, 54, 69, 0.1); border-radius: 4px; padding: 6px 10px; margin: 8px 0 0; }
 .pos-dots { padding: 0 8px; font-size: 16px; line-height: 1.2; }
 .ow-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); }
 .ow-avail { padding: 0 12px 8px; }

@@ -387,9 +387,10 @@ function openExit(el, app, panels, b, p, mode) {
   const long = p.qty > 0, side = long ? "SELL" : "BUY";
   const lot = p.fo?.lot || 1, held = Math.abs(p.qty);
   const tick = (v) => Math.round(v * 20) / 20;
-  const ltp = p.ltp;
+  // The positions list isn't live for stocks, so the form reads the live price and keeps it current.
+  let ltp = p.ltp;
   const who = p.fo ? { tradingSymbol: p.fo.tradingSymbol } : { symbol: p.symbol };
-  const head = `<p class="hint-text">${long ? "Long" : "Short"} ${fmtNum(held, 0)} ${esc(p.name)} (${esc(p.product)}), now ₹${fmtPrice(ltp)}. The exit is a <b>${side}</b>.</p>
+  const head = `<p class="hint-text">${long ? "Long" : "Short"} ${fmtNum(held, 0)} ${esc(p.name)} (${esc(p.product)}), now <b id="exNow">₹${fmtPrice(ltp)}</b> <span class="muted">(live)</span>. The exit is a <b>${side}</b>.</p>
     <div class="form-grid"><label class="field">Quantity to ${side.toLowerCase()}${lot > 1 ? ` (lots of ${lot})` : ""}<input id="exQty" type="number" min="${lot}" step="${lot}" max="${held}" value="${held}"></label></div>`;
   const body =
     mode === "single"
@@ -407,13 +408,38 @@ function openExit(el, app, panels, b, p, mode) {
           <p class="hint-text">Kept in Quant Terminal, not sent to ${esc(nameOf(b))} until one is hit. Then only that order is sent, the other is cancelled, and the OCO leaves the list. The app must be running and ${esc(nameOf(b))} logged in.${p.product === "MIS" ? " Intraday: it ends at 3:15 pm." : ""}</p>`;
   const card = app.modal(
     `${mode === "single" ? "Exit" : "Exit OCO"}: ${p.name}`,
-    `${body}<div class="row-flex" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="exCancel">Cancel</button> <button class="btn ${side === "SELL" ? "ow-sell" : "ow-buy"}" id="exGo">${mode === "single" ? `${side === "SELL" ? "Sell" : "Buy"} now` : "Save OCO"}</button></div>`,
+    `${body}<p class="ow-err" id="exErr" role="alert" hidden></p><div class="row-flex" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="exCancel">Cancel</button> <button class="btn ${side === "SELL" ? "ow-sell" : "ow-buy"}" id="exGo">${mode === "single" ? `${side === "SELL" ? "Sell" : "Buy"} now` : "Save OCO"}</button></div>`,
   );
   const f = (id) => card.querySelector(id);
   f("#exCancel").onclick = () => app.closeModal();
+  const showErr = (text) => {
+    f("#exErr").hidden = !text;
+    f("#exErr").textContent = text || "";
+  };
+  let note = () => {};
+  // Defaults follow the live price until you type in a box.
+  const touched = new Set();
+  card.querySelectorAll("input").forEach((i) => i.addEventListener("input", () => touched.add(i.id)));
+  const setDefaults = () => {
+    const put = (id, v) => f(id) && !touched.has(id.slice(1)) && (f(id).value = tick(v));
+    put("#exPrice", ltp);
+    put("#exSl", long ? ltp - 20 : ltp + 20);
+    put("#exTg", long ? ltp + 20 : ltp - 20);
+  };
+  const key = p.fo ? `${p.fo.seg}|${p.fo.token}` : null;
+  const refreshPrice = async () => {
+    const v = await (key ? api.get(`/api/broker/${encodeURIComponent(b)}/fo-prices?keys=${encodeURIComponent(key)}`).then((r) => r[key]) : api.quotes([p.symbol]).then((r) => r[p.symbol]?.price)).catch(() => null);
+    if (!(v > 0) || !card.isConnected) return;
+    ltp = v;
+    f("#exNow").textContent = `₹${fmtPrice(v)}`;
+    setDefaults();
+    note();
+  };
+  refreshPrice();
+  const priceTimer = setInterval(() => (card.isConnected ? !document.hidden && refreshPrice() : clearInterval(priceTimer)), 3000);
   if (mode === "single") f("#exType").onchange = () => (f("#exPrice").disabled = f("#exType").value === "MARKET");
   else {
-    const note = () => {
+    note = () => {
       const on = f("#exTrail").checked, step = Number(f("#exStep").value);
       f("#exStep").disabled = !on;
       f("#exTrailNote").textContent =
@@ -426,7 +452,8 @@ function openExit(el, app, panels, b, p, mode) {
   }
   f("#exGo").onclick = async () => {
     const qty = Number(f("#exQty").value);
-    if (!(qty > 0) || qty > held || qty % lot) return app.toast(`Quantity must be up to ${held}${lot > 1 ? `, in lots of ${lot}` : ""}.`, "err");
+    showErr("");
+    if (!(qty > 0) || qty > held || qty % lot) return showErr(`Quantity must be up to ${held}${lot > 1 ? `, in lots of ${lot}` : ""}.`);
     let url, payload, text;
     if (mode === "single") {
       const type = f("#exType").value, price = type === "LIMIT" ? Number(f("#exPrice").value) : null;
@@ -436,6 +463,10 @@ function openExit(el, app, panels, b, p, mode) {
     } else {
       const sl = Number(f("#exSl").value), tg = Number(f("#exTg").value), slType = f("#exSlType").value;
       const trail = f("#exTrail").checked && Number(f("#exStep").value) > 0 ? { type: "pts", value: Number(f("#exStep").value) } : null;
+      // Checked against the live price here too, so a wrong side is caught before the confirm box.
+      const where = (v) => (long ? (v < ltp ? "below" : "above") : v > ltp ? "above" : "below");
+      if (where(sl) !== (long ? "below" : "above")) return showErr(`The stop-loss (₹${sl}) must be ${long ? "below" : "above"} the live price (₹${fmtPrice(ltp)}).`);
+      if (where(tg) !== (long ? "above" : "below")) return showErr(`The target (₹${tg}) must be ${long ? "above" : "below"} the live price (₹${fmtPrice(ltp)}).`);
       text = `Exit OCO on ${nameOf(b)} (kept in Quant Terminal)\n\n${side} ${qty} × ${p.name} (${p.product})\nStop-loss ₹${sl} → ${slType === "MARKET" ? "market order" : `limit ₹${sl}`}${trail ? `, trailing ${trail.value} points` : ""}\nTarget ₹${tg} → limit ₹${tg}\n\nNow ₹${ltp}. When one is hit, a REAL order is sent for it and the other is cancelled.\n\nSave this OCO?`;
       url = "/api/gtt";
       payload = {
@@ -462,7 +493,7 @@ function openExit(el, app, panels, b, p, mode) {
       renderBroker(el.closest("#bottomBody") || el, app, panels);
     } catch (e) {
       f("#exGo").disabled = false;
-      app.toast(e.message, "err");
+      showErr(`${e.message} ${mode === "single" ? "Nothing was sent." : "Nothing was saved."}`);
     }
   };
 }
