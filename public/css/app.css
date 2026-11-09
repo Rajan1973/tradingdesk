@@ -1111,6 +1111,14 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .ow-tag.sl { background: rgba(156, 39, 176, 0.18); color: #ce93d8; }
 .ow-tag.tg { background: rgba(156, 39, 176, 0.18); color: #ce93d8; }
 .ow-note { margin: 8px 0 2px; }
+/* Zerodha-style GTT strip under a regular order: Stoploss % / Target % set once it fills. */
+.ow-att { align-items: center; gap: 6px 8px; border-top: 1px solid var(--border); padding-top: 8px; }
+.ow-gtt-badge { font-size: 10px; font-weight: 700; font-style: italic; color: #fff; background: var(--accent); border-radius: 3px; padding: 1px 5px; }
+.ow-pct { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.ow-pct input { width: 48px; }
+.ow-pct.off input { opacity: 0.5; }
+.ow-info { cursor: help; color: var(--accent); }
+.pos-dots { padding: 0 8px; font-size: 16px; line-height: 1.2; }
 .ow-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); }
 .ow-avail { padding: 0 12px 8px; }
 .btn.ow-buy { background: #4184f3; border-color: #4184f3; color: #fff; min-width: 90px; }

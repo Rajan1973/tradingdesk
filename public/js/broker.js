@@ -290,7 +290,7 @@ function drawPortfolio(el, app, panels, b, d) {
             .map((p, i) =>
               row(
                 p.fo ? `${p.fo.seg === "bse_fo" ? "BFO" : "NFO"}:${p.fo.tradingSymbol}` : p.symbol,
-                `<td class="l">${esc(p.name)}</td><td>${esc(p.product || "")}</td><td>${fmtNum(p.qty, 0)}</td><td>${p.avg == null ? "—" : fmtPrice(p.avg)}</td><td data-fo-ltp="${i}">${p.ltp == null ? "—" : fmtPrice(p.ltp)}</td><td data-fo-pnl="${i}" class="${(p.pnl || 0) >= 0 ? "up" : "down"}">${p.pnl == null ? "—" : inr(p.pnl)}</td><td>${p.fo && p.qty ? `<button class="btn small" data-trail="${i}">Trailing stop</button>` : ""}</td>`,
+                `<td class="l">${esc(p.name)}</td><td>${esc(p.product || "")}</td><td>${fmtNum(p.qty, 0)}</td><td>${p.avg == null ? "—" : fmtPrice(p.avg)}</td><td data-fo-ltp="${i}">${p.ltp == null ? "—" : fmtPrice(p.ltp)}</td><td data-fo-pnl="${i}" class="${(p.pnl || 0) >= 0 ? "up" : "down"}">${p.pnl == null ? "—" : inr(p.pnl)}</td><td>${exitable(p) ? `<button class="btn small pos-dots" data-pos-menu="${i}" title="Exit this position" aria-label="Exit ${esc(p.name)}">⋮</button>` : ""}</td>`,
               ),
             )
             .join("")}</tbody></table>`
@@ -315,7 +315,16 @@ function drawPortfolio(el, app, panels, b, d) {
   );
   bindTicket(el, app, panels, b);
   drawGtts(el, app, panels, b);
-  box.querySelectorAll("[data-trail]").forEach((x) => (x.onclick = () => openTrail(el, app, panels, b, d.positions[x.dataset.trail])));
+  box.querySelectorAll("[data-pos-menu]").forEach(
+    (x) =>
+      (x.onclick = (e) => {
+        const p = d.positions[x.dataset.posMenu];
+        popMenu(e, [
+          ["Exit: single order", () => openExit(el, app, panels, b, p, "single")],
+          ["Exit: OCO (stop-loss + target)", () => openExit(el, app, panels, b, p, "oco")],
+        ]);
+      }),
+  );
   watchFoPrices(box, b, d.positions);
 }
 
@@ -343,57 +352,116 @@ function watchFoPrices(box, b, positions) {
   }, 5000);
 }
 
-// A trailing stop that closes an F&O position. The server re-reads the position before saving it.
-function openTrail(el, app, panels, b, p) {
+// Positions that can be exited from here: NSE stocks on any broker, and F&O on Kotak Neo.
+const exitable = (p) => !!p.qty && (!!p.fo || /^YAHOO:[A-Z0-9&\-]+\.NS$/i.test(p.symbol || ""));
+
+// A small menu by the button that opened it (same look as the chart's right-click menu).
+function popMenu(e, items) {
+  document.querySelector(".chart-menu.pos-menu")?.remove();
+  const m = document.createElement("div");
+  m.className = "chart-menu pos-menu";
+  for (const [label, fn] of items) {
+    const btn = document.createElement("button");
+    btn.textContent = label;
+    btn.onclick = () => (m.remove(), fn());
+    m.appendChild(btn);
+  }
+  document.body.appendChild(m);
+  const r = e.currentTarget.getBoundingClientRect();
+  m.style.left = `${Math.max(4, Math.min(r.right - m.offsetWidth, innerWidth - m.offsetWidth - 4))}px`;
+  m.style.top = `${r.bottom + 2 + m.offsetHeight > innerHeight ? r.top - m.offsetHeight - 2 : r.bottom + 2}px`;
+  const close = (ev) => {
+    if (ev.type === "keydown" && ev.key !== "Escape") return;
+    if (ev.type === "mousedown" && m.contains(ev.target)) return;
+    m.remove();
+    removeEventListener("mousedown", close, true);
+    removeEventListener("keydown", close, true);
+  };
+  setTimeout(() => (addEventListener("mousedown", close, true), addEventListener("keydown", close, true)));
+}
+
+// Exit a position: the reverse order for what you hold. "single" goes to the broker now; "oco" is a
+// stop-loss and target kept in Quant Terminal, and only the leg that's hit is sent.
+function openExit(el, app, panels, b, p, mode) {
   if (!p.ltp) return app.toast("No live price yet for this position. Try again in a moment.", "err");
   const long = p.qty > 0, side = long ? "SELL" : "BUY";
+  const lot = p.fo?.lot || 1, held = Math.abs(p.qty);
   const tick = (v) => Math.round(v * 20) / 20;
+  const ltp = p.ltp;
+  const who = p.fo ? { tradingSymbol: p.fo.tradingSymbol } : { symbol: p.symbol };
+  const head = `<p class="hint-text">${long ? "Long" : "Short"} ${fmtNum(held, 0)} ${esc(p.name)} (${esc(p.product)}), now ₹${fmtPrice(ltp)}. The exit is a <b>${side}</b>.</p>
+    <div class="form-grid"><label class="field">Quantity to ${side.toLowerCase()}${lot > 1 ? ` (lots of ${lot})` : ""}<input id="exQty" type="number" min="${lot}" step="${lot}" max="${held}" value="${held}"></label></div>`;
+  const body =
+    mode === "single"
+      ? `${head}<div class="form-grid">
+          <label class="field">Order<select id="exType"><option value="MARKET">Market</option><option value="LIMIT">Limit</option></select></label>
+          <label class="field">Limit price (₹)<input id="exPrice" type="number" min="0" step="0.05" value="${tick(ltp)}" disabled></label></div>
+          <p class="hint-text">Sent to ${esc(nameOf(b))} straight away.</p>`
+      : `${head}<h4>Stop-loss</h4><div class="form-grid">
+          <label class="field">Stop-loss (₹), trailing starts here<input id="exSl" type="number" min="0" step="0.05" value="${tick(long ? ltp - 20 : ltp + 20)}"></label>
+          <label class="field">When hit, send<select id="exSlType"><option value="MARKET">Market order</option><option value="LIMIT">Limit order at the stop</option></select></label>
+          <label class="field"><span><input type="checkbox" id="exTrail"> Trail, in points</span><input id="exStep" type="number" min="0" step="0.5" value="5" disabled></label></div>
+          <p class="hint-text" id="exTrailNote"></p>
+          <h4>Target</h4><div class="form-grid">
+          <label class="field">Target (₹), sends a limit order<input id="exTg" type="number" min="0" step="0.05" value="${tick(long ? ltp + 20 : ltp - 20)}"></label></div>
+          <p class="hint-text">Kept in Quant Terminal, not sent to ${esc(nameOf(b))} until one is hit. Then only that order is sent, the other is cancelled, and the OCO leaves the list. The app must be running and ${esc(nameOf(b))} logged in.${p.product === "MIS" ? " Intraday: it ends at 3:15 pm." : ""}</p>`;
   const card = app.modal(
-    `Trailing stop: ${p.name}`,
-    `<p class="hint-text">Now ₹${fmtPrice(p.ltp)}. Position ${fmtNum(p.qty, 0)} (${p.product}). Kept in Quant Terminal: the app must stay running and ${esc(nameOf(b))} logged in.</p>
-    <div class="form-grid">
-      <label class="field">Quantity to ${side.toLowerCase()} (lots of ${p.fo.lot})<input id="tsQty" type="number" min="${p.fo.lot}" step="${p.fo.lot}" max="${Math.abs(p.qty)}" value="${Math.abs(p.qty)}"></label>
-      <label class="field">Trail by<input id="tsValue" type="number" min="0" step="0.5" value="10"></label>
-      <label class="field">Trail in<select id="tsType"><option value="pct">% from the best price</option><option value="pts">₹ from the best price</option></select></label>
-      <label class="field">Stop starts at (₹)<input id="tsStop" type="number" min="0" step="0.05"></label>
-      <label class="field">When hit, send<select id="tsOrder"><option value="LIMIT">Limit order</option><option value="MARKET">Market order</option></select></label>
-      <label class="field">Limit ${long ? "below" : "above"} the stop by (₹)<input id="tsBuffer" type="number" min="0" step="0.05"></label>
-    </div>
-    <div class="row-flex" style="justify-content:flex-end;margin-top:10px"><button class="btn" data-close-trail>Cancel</button> <button class="btn primary" id="tsSave">Save trailing stop</button></div>`,
+    `${mode === "single" ? "Exit" : "Exit OCO"}: ${p.name}`,
+    `${body}<div class="row-flex" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="exCancel">Cancel</button> <button class="btn ${side === "SELL" ? "ow-sell" : "ow-buy"}" id="exGo">${mode === "single" ? `${side === "SELL" ? "Sell" : "Buy"} now` : "Save OCO"}</button></div>`,
   );
   const f = (id) => card.querySelector(id);
-  const fill = () => {
-    const v = Number(f("#tsValue").value) || 0;
-    const gap = f("#tsType").value === "pct" ? (p.ltp * v) / 100 : v;
-    const stop = tick(long ? p.ltp - gap : p.ltp + gap);
-    f("#tsStop").value = stop;
-    f("#tsBuffer").value = tick(stop * 0.02);
-  };
-  fill();
-  f("#tsValue").oninput = f("#tsType").onchange = fill;
-  f("#tsOrder").onchange = () => (f("#tsBuffer").disabled = f("#tsOrder").value === "MARKET");
-  f("[data-close-trail]").onclick = () => app.closeModal();
-  f("#tsSave").onclick = async () => {
-    const qty = Number(f("#tsQty").value), trigger = Number(f("#tsStop").value), value = Number(f("#tsValue").value);
-    const type = f("#tsType").value, orderType = f("#tsOrder").value, buffer = Number(f("#tsBuffer").value) || 0;
-    const price = orderType === "LIMIT" ? tick(long ? trigger - buffer : trigger + buffer) : null;
-    const ok = confirm(
-      `Trailing stop on ${nameOf(b)} (kept in Quant Terminal)\n\n${side} ${qty} × ${p.name} (${p.product})\nStop at ₹${trigger}, trailing ${type === "pct" ? `${value}%` : `₹${value}`} from the best price\nWhen hit: ${orderType === "MARKET" ? "market order" : `limit order at about ₹${price} (it may not fill if the price falls fast)`}\n\nNow ₹${p.ltp}. When the stop is hit, a REAL order is placed automatically.\n\nSave this stop?`,
-    );
-    if (!ok) return;
+  f("#exCancel").onclick = () => app.closeModal();
+  if (mode === "single") f("#exType").onchange = () => (f("#exPrice").disabled = f("#exType").value === "MARKET");
+  else {
+    const note = () => {
+      const on = f("#exTrail").checked, step = Number(f("#exStep").value);
+      f("#exStep").disabled = !on;
+      f("#exTrailNote").textContent =
+        on && step > 0
+          ? `Each time the price moves ${step} points ${long ? "up" : "down"} from ₹${fmtPrice(ltp)}, the stop moves ${step} points ${long ? "up" : "down"} from ₹${f("#exSl").value}. It never moves back.`
+          : "";
+    };
+    f("#exTrail").onchange = f("#exStep").oninput = f("#exSl").oninput = note;
+    note();
+  }
+  f("#exGo").onclick = async () => {
+    const qty = Number(f("#exQty").value);
+    if (!(qty > 0) || qty > held || qty % lot) return app.toast(`Quantity must be up to ${held}${lot > 1 ? `, in lots of ${lot}` : ""}.`, "err");
+    let url, payload, text;
+    if (mode === "single") {
+      const type = f("#exType").value, price = type === "LIMIT" ? Number(f("#exPrice").value) : null;
+      text = `REAL ORDER on ${nameOf(b)}\n\nExit: ${side} ${qty} × ${p.name} (${p.product})\n${type === "MARKET" ? "at market price" : `at limit ₹${price}`}\n\nSend this order now?`;
+      url = `/api/broker/${encodeURIComponent(b)}/order`;
+      payload = { exit: true, ...who, side, qty, type, price, product: p.product };
+    } else {
+      const sl = Number(f("#exSl").value), tg = Number(f("#exTg").value), slType = f("#exSlType").value;
+      const trail = f("#exTrail").checked && Number(f("#exStep").value) > 0 ? { type: "pts", value: Number(f("#exStep").value) } : null;
+      text = `Exit OCO on ${nameOf(b)} (kept in Quant Terminal)\n\n${side} ${qty} × ${p.name} (${p.product})\nStop-loss ₹${sl} → ${slType === "MARKET" ? "market order" : `limit ₹${sl}`}${trail ? `, trailing ${trail.value} points` : ""}\nTarget ₹${tg} → limit ₹${tg}\n\nNow ₹${ltp}. When one is hit, a REAL order is sent for it and the other is cancelled.\n\nSave this OCO?`;
+      url = "/api/gtt";
+      payload = {
+        account: b,
+        ...(p.fo ? { tradingSymbol: p.fo.tradingSymbol } : { exitSymbol: p.symbol }),
+        product: p.product,
+        qty,
+        kind: "oco",
+        legs: [
+          { name: "stoploss", trigger: sl, orderType: slType, price: slType === "LIMIT" ? sl : null, ...(trail ? { trail } : {}) },
+          { name: "target", trigger: tg, orderType: "LIMIT", price: tg },
+        ],
+      };
+    }
+    if (!confirm(text)) return;
+    f("#exGo").disabled = true;
     try {
-      const res = await fetch("/api/gtt", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "x-qt": "1", "x-qt-live-order": "confirmed" },
-        body: JSON.stringify({ account: b, tradingSymbol: p.fo.tradingSymbol, product: p.product, qty, legs: [{ trigger, orderType, price, trail: { type, value } }] }),
-      });
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "x-qt": "1", "x-qt-live-order": "confirmed" }, body: JSON.stringify(payload) });
       const r = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
       app.closeModal();
-      app.toast(`Trailing stop saved on ${p.name}. Quant Terminal is watching it.`);
-      view.pane = "gtt";
+      app.toast(mode === "single" ? `${r.broker} received the exit order (ID ${r.orderId}).` : `Exit OCO saved on ${p.name}. Quant Terminal is watching it.`);
+      view.pane = mode === "single" ? "orders" : "gtt";
       renderBroker(el.closest("#bottomBody") || el, app, panels);
     } catch (e) {
+      f("#exGo").disabled = false;
       app.toast(e.message, "err");
     }
   };
@@ -405,6 +473,7 @@ function openTrail(el, app, panels, b, p) {
 const tradable = (sym) => /^YAHOO:[A-Z0-9&\-]+\.NS$/i.test(sym || "");
 const T = () => view.ticket;
 if (!view.ticket.tab) Object.assign(view.ticket, { tab: "regular", gttKind: "oco", sl: { pct: -5, orderType: "LIMIT", trail: false, trailType: "pct", trailValue: 2 }, tg: { pct: 5, orderType: "LIMIT" } });
+if (!view.ticket.att) view.ticket.att = { slOn: false, sl: 2, tgOn: false, tg: 4 };
 const quotesFor = {}; // symbol, or a Kotak contract's "seg|token" -> { nse, bse }
 // A contract picked in the order window's search (Kotak only). Without one, it follows the chart.
 const pickedOf = (b) => (acctOf(b)?.broker === "kotak" ? T().instrument || null : null);
@@ -482,7 +551,15 @@ function ticketHtml(app, b) {
         <label class="ow-field ${priceOn ? "" : "off"}">Price<input id="owPrice" type="number" step="0.05" min="0" value="${priceOn ? (t.price ?? "") : ""}" ${priceOn ? "" : "disabled"} placeholder="${priceOn ? "" : "Market"}"></label>
         <label class="ow-field ${trigOn ? "" : "off"}">Trigger price<input id="owTrig" type="number" step="0.05" min="0" value="${trigOn ? (t.trigger ?? "") : ""}" ${trigOn ? "" : "disabled"}></label>
       </div>
-      <div class="row-flex ow-row">${radio("owType", "MARKET", "Market", "", icici)}${radio("owType", "LIMIT", "Limit")}<span class="spacer"></span>${radio("owType", "SL", "SL")}${radio("owType", "SL-M", "SL-M", "", icici)}</div>`;
+      <div class="row-flex ow-row">${radio("owType", "MARKET", "Market", "", icici)}${radio("owType", "LIMIT", "Limit")}<span class="spacer"></span>${radio("owType", "SL", "SL")}${radio("owType", "SL-M", "SL-M", "", icici)}</div>
+      ${
+        c && c.kind !== "fo"
+          ? ""
+          : `<div class="row-flex ow-row ow-att"><span class="ow-gtt-badge">GTT</span>
+        <label class="ow-radio"><input type="checkbox" id="owSlOn" ${t.att.slOn ? "checked" : ""}> Stoploss</label><label class="ow-pct ${t.att.slOn ? "" : "off"}"><input id="owSlPct" type="number" min="0" step="0.5" value="${t.att.sl}" ${t.att.slOn ? "" : "disabled"} aria-label="Stoploss %"> %</label>
+        <label class="ow-radio"><input type="checkbox" id="owTgOn" ${t.att.tgOn ? "checked" : ""}> Target</label><label class="ow-pct ${t.att.tgOn ? "" : "off"}"><input id="owTgPct" type="number" min="0" step="0.5" value="${t.att.tg}" ${t.att.tgOn ? "" : "disabled"} aria-label="Target %"> %</label>
+        <span class="spacer"></span><span class="ow-info" title="Once this order fills, Quant Terminal sets a stop-loss and/or target this % from the fill price, kept in Quant Terminal (OCO). Only the one that's hit is sent; the stop-loss sends a market order, the target a limit order.">ⓘ</span></div>`
+      }`;
   } else {
     const leg = (key, label, cls) => {
       const L = t[key];
@@ -495,7 +572,7 @@ function ticketHtml(app, b) {
           <label class="ow-radio"><input type="radio" name="ot-${key}" value="MARKET" ${L.orderType === "MARKET" ? "checked" : ""}> Market</label>
           <label class="ow-field ${L.orderType === "LIMIT" ? "" : "off"}">Price<input data-leg="${key}" data-f="price" type="number" step="0.05" value="${L.orderType === "LIMIT" ? (L.price ?? "") : ""}" ${L.orderType === "LIMIT" ? "" : "disabled"} placeholder="${L.orderType === "LIMIT" ? "" : "Market"}"></label>
         </div>
-        ${key === "sl" ? `<div class="row-flex ow-row" style="align-items:center"><label class="ow-radio"><input type="checkbox" id="owTrail" ${L.trail ? "checked" : ""}> Trailing</label>${L.trail ? `<label class="ow-field small">Trail by<input id="owTrailV" type="number" step="0.5" min="0" value="${L.trailValue}"></label><select id="owTrailT" class="in"><option value="pct" ${L.trailType === "pct" ? "selected" : ""}>% from the best price</option><option value="pts" ${L.trailType === "pts" ? "selected" : ""}>₹ from the best price</option></select>` : `<span class="hint-text">The stop follows the price ${sell ? "up" : "down"} and never moves back.</span>`}</div>` : ""}
+        ${key === "sl" ? `<div class="row-flex ow-row" style="align-items:center"><label class="ow-radio"><input type="checkbox" id="owTrail" ${L.trail ? "checked" : ""}> Trailing</label>${L.trail ? `<label class="ow-field small">Trail by<input id="owTrailV" type="number" step="0.5" min="0" value="${L.trailValue}"></label><select id="owTrailT" class="in"><option value="pct" ${L.trailType === "pct" ? "selected" : ""}>% steps</option><option value="pts" ${L.trailType === "pts" ? "selected" : ""}>points (₹) steps</option></select>` : `<span class="hint-text">The stop moves one step ${sell ? "up" : "down"} each time the price moves one step, and never moves back.</span>`}</div>` : ""}
       </div>`;
     };
     const single = t.gttKind === "single";
@@ -563,6 +640,8 @@ function bindTicket(el, app, panels, b) {
       const L = t[i.dataset.leg];
       if (!i.disabled) L[i.dataset.f] = i.value === "" ? null : Number(i.value);
     });
+    if (q("#owSlPct")) t.att.sl = Number(q("#owSlPct").value);
+    if (q("#owTgPct")) t.att.tg = Number(q("#owTgPct").value);
     if (q("#owTrailV")) t.sl.trailValue = Number(q("#owTrailV").value);
     if (q("#owTrailT")) t.sl.trailType = q("#owTrailT").value;
   };
@@ -626,6 +705,8 @@ function bindTicket(el, app, panels, b) {
   for (const key of ["sl", "tg"])
     el.querySelectorAll(`input[name="ot-${key}"]`).forEach((x) => (x.onchange = () => (read(), (t[key].orderType = x.value), redraw())));
   if (q("#owTrail")) q("#owTrail").onchange = (e) => (read(), (t.sl.trail = e.target.checked), redraw());
+  if (q("#owSlOn")) q("#owSlOn").onchange = (e) => (read(), (t.att.slOn = e.target.checked), redraw());
+  if (q("#owTgOn")) q("#owTgOn").onchange = (e) => (read(), (t.att.tgOn = e.target.checked), redraw());
   // Trigger and % of LTP stay in step.
   el.querySelectorAll("[data-leg]").forEach((i) => {
     i.oninput = () => {
@@ -682,18 +763,26 @@ async function sendRegular(el, app, panels, b, sym) {
     t.type === "LIMIT" ? `at limit ₹${t.price}` :
     t.type === "SL" ? `stop-loss: trigger ₹${t.trigger}, limit ₹${t.price}` :
     `stop-loss market: trigger ₹${t.trigger}`;
-  const ok = confirm(`REAL ORDER on ${nameOf(b)}\n\n${t.side} ${order.label}\n${priceText}\n${order.productText}, valid for today${order.warn}\n\nSend this order?`);
+  const c = pickedOf(b);
+  const att = (!c || c.kind === "fo") && (t.att.slOn || t.att.tgOn) ? { sl: t.att.slOn ? t.att.sl : null, tg: t.att.tgOn ? t.att.tg : null } : null;
+  const buy = t.side === "BUY";
+  const attText = att
+    ? `\n\nOnce it fills, Quant Terminal keeps an exit (${att.sl != null && att.tg != null ? "OCO" : "GTT"}):${att.sl != null ? `\nStop-loss ${att.sl}% ${buy ? "below" : "above"} the fill → market order` : ""}${att.tg != null ? `\nTarget ${att.tg}% ${buy ? "above" : "below"} the fill → limit order` : ""}\nOnly the one that's hit is sent to ${nameOf(b)}.`
+    : "";
+  const ok = confirm(`REAL ORDER on ${nameOf(b)}\n\n${t.side} ${order.label}\n${priceText}\n${order.productText}, valid for today${order.warn}${attText}\n\nSend this order?`);
   if (!ok) return;
   el.querySelector("#owSend").disabled = true;
   try {
     const res = await fetch(`/api/broker/${encodeURIComponent(b)}/order`, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-qt": "1", "x-qt-live-order": "confirmed" },
-      body: JSON.stringify({ ...(order.contract || { symbol: sym }), side: t.side, qty: order.qty, type: t.type, product: t.product, price: t.price, trigger: t.trigger }),
+      body: JSON.stringify({ ...(order.contract || { symbol: sym }), side: t.side, qty: order.qty, type: t.type, product: t.product, price: t.price, trigger: t.trigger, ...(att ? { attach: att } : {}) }),
     });
     const r = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(r.error || `HTTP ${res.status}`);
     app.toast(`${r.broker} received the order (ID ${r.orderId}). Checking its status…`);
+    if (r.gttError) app.toast(`The stop-loss / target wasn't set: ${r.gttError}`, "err");
+    else if (r.gtt) app.toast("Stop-loss / target will be set when the order fills (see GTT orders).");
     // The broker's risk checks run after it takes the order, so read back what happened to it.
     await new Promise((ok) => setTimeout(ok, 2500));
     const pf = await api.get(`/api/broker/${encodeURIComponent(b)}/portfolio`).catch(() => null);
@@ -750,16 +839,18 @@ async function sendGtt(el, app, panels, b, sym, ltp) {
 async function gttHtml() {
   const list = await api.get("/api/gtt").catch(() => []);
   view.gtts = list;
-  const live = list.filter((g) => ["active", "needs-login", "placing"].includes(g.status));
-  const done = list.filter((g) => !["active", "needs-login", "placing"].includes(g.status)).slice(0, 15);
-  const status = { active: "Watching", "needs-login": "Needs login", placing: "Placing…", triggered: "Triggered", failed: "Order refused", cancelled: "Cancelled", expired: "Expired" };
+  const live = list.filter((g) => ["active", "needs-login", "placing", "waiting-fill"].includes(g.status));
+  const done = list.filter((g) => !["active", "needs-login", "placing", "waiting-fill"].includes(g.status)).slice(0, 15);
+  const status = { active: "Watching", "needs-login": "Needs login", placing: "Placing…", "waiting-fill": "Waiting for fill", triggered: "Triggered", failed: "Order refused", cancelled: "Cancelled", expired: "Expired" };
   const legs = (g) =>
-    g.legs
+    g.status === "waiting-fill"
+      ? [g.entry.sl != null ? `SL ${g.entry.sl}%` : "", g.entry.tg != null ? `Target ${g.entry.tg}%` : ""].filter(Boolean).join(" · ") + ` <span class="muted">from the fill of order ${esc(g.entry.orderId)}</span>`
+      : g.legs
       .map((l) => `${l.name === "trigger" ? "Trigger" : l.name === "stoploss" ? "SL" : "Target"} ₹${fmtPrice(l.trigger)}${l.trail ? ` <span class="muted">(trailing ${l.trail.type === "pct" ? `${l.trail.value}%` : `₹${l.trail.value}`}, best ₹${fmtPrice(l.trail.best)})</span>` : ""}`)
       .join("<br>");
   const row = (g) => {
     const last = g.history?.[g.history.length - 1]?.text || "";
-    return `<tr ${g.fo ? "" : `data-s="${esc(g.symbol)}" style="cursor:pointer"`}><td class="l"><b>${esc(ticker(g.symbol).replace(/\.NS$/, ""))}</b></td><td class="l">${esc(g.accountName)}</td><td class="${g.side === "BUY" ? "up" : "down"}">${g.side}</td><td>${g.qty}</td><td class="l">${g.kind === "oco" ? "OCO" : "Single"} · ${g.product}</td><td class="l">${legs(g)}</td><td>${g.lastPrice ? fmtPrice(g.lastPrice) : "—"}</td><td class="l ${g.status === "needs-login" || g.status === "failed" ? "down" : g.status === "triggered" ? "up" : ""}" title="${esc(last)}">${status[g.status] || g.status}</td><td>${["active", "needs-login"].includes(g.status) ? `<button class="btn small" data-gtt-edit="${g.id}">Modify</button> <button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "placing" ? "" : `<button class="btn small" data-gtt-remove="${g.id}" title="Remove from the list">×</button>`}</td></tr>`;
+    return `<tr ${g.fo ? "" : `data-s="${esc(g.symbol)}" style="cursor:pointer"`}><td class="l"><b>${esc(ticker(g.symbol).replace(/\.NS$/, ""))}</b></td><td class="l">${esc(g.accountName)}</td><td class="${g.side === "BUY" ? "up" : "down"}">${g.side}</td><td>${g.qty}</td><td class="l">${g.kind === "oco" ? "OCO" : "Single"} · ${g.product}</td><td class="l">${legs(g)}</td><td>${g.lastPrice ? fmtPrice(g.lastPrice) : "—"}</td><td class="l ${g.status === "needs-login" || g.status === "failed" ? "down" : g.status === "triggered" ? "up" : ""}" title="${esc(last)}">${status[g.status] || g.status}</td><td>${["active", "needs-login"].includes(g.status) ? `<button class="btn small" data-gtt-edit="${g.id}">Modify</button> <button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "waiting-fill" ? `<button class="btn small" data-gtt-cancel="${g.id}">Cancel</button>` : g.status === "placing" ? "" : `<button class="btn small" data-gtt-remove="${g.id}" title="Remove from the list">×</button>`}</td></tr>`;
   };
   const head = `<thead><tr><th class="l">Stock</th><th class="l">Account</th><th>Side</th><th>Qty</th><th class="l">Type</th><th class="l">Triggers</th><th>LTP</th><th class="l">Status</th><th></th></tr></thead>`;
   return `<h4>GTT orders (${live.length} watching) <span class="hint-text">kept in Quant Terminal, checked every 5 seconds in market hours</span></h4>
@@ -782,7 +873,7 @@ function openGttEdit(el, app, panels, b, g) {
         canTrail
           ? `<label class="field">Trailing<select data-g="trailOn" data-i="${i}"><option value="1" ${l.trail ? "selected" : ""}>On</option><option value="0" ${l.trail ? "" : "selected"}>Off</option></select></label>
       <label class="field">Trail by<input data-g="trailValue" data-i="${i}" type="number" min="0" step="0.5" value="${l.trail?.value ?? 5}" ${l.trail ? "" : "disabled"}></label>
-      <label class="field">Trail in<select data-g="trailType" data-i="${i}" ${l.trail ? "" : "disabled"}><option value="pct" ${l.trail?.type !== "pts" ? "selected" : ""}>% from the best price</option><option value="pts" ${l.trail?.type === "pts" ? "selected" : ""}>₹ from the best price</option></select></label>
+      <label class="field">Trail in<select data-g="trailType" data-i="${i}" ${l.trail ? "" : "disabled"}><option value="pct" ${l.trail?.type !== "pts" ? "selected" : ""}>% steps</option><option value="pts" ${l.trail?.type === "pts" ? "selected" : ""}>points (₹) steps</option></select></label>
       <p class="hint-text" data-g="note" data-i="${i}" style="grid-column:1/-1"></p>`
           : ""
       }
@@ -796,16 +887,13 @@ function openGttEdit(el, app, panels, b, g) {
     <div class="row-flex" style="justify-content:flex-end;margin-top:10px"><button class="btn" id="geCancel">Keep as it is</button> <button class="btn primary" id="geSave">Save changes</button></div>`,
   );
   const f = (name, i) => card.querySelector(`[data-g="${name}"][data-i="${i}"]`);
-  // A trailing stop tightens to its trail distance at the next check, so show that before saving.
+  // A step trail: say how the stop will move from the trigger you set.
   const refresh = (i) => {
     const on = f("trailOn", i)?.value === "1";
     if (!f("trailOn", i)) return;
     f("trailValue", i).disabled = f("trailType", i).disabled = !on;
-    const trigger = Number(f("trigger", i).value), v = Number(f("trailValue", i).value), p = g.lastPrice;
-    const gap = f("trailType", i).value === "pct" ? (p * v) / 100 : v;
-    const moved = sell ? p - gap : p + gap;
-    const tighter = sell ? moved > trigger : moved < trigger;
-    f("note", i).textContent = on && p && v > 0 && tighter ? `With this trail, the stop will move to about ₹${fmtPrice(moved)} at the next check. To keep ₹${fmtPrice(trigger)}, widen the trail.` : "";
+    const v = Number(f("trailValue", i).value), unit = f("trailType", i).value === "pct" ? `${v}%` : `₹${v}`;
+    f("note", i).textContent = on && v > 0 ? `The stop starts at ₹${f("trigger", i).value} and moves ${unit} ${sell ? "up" : "down"} each time the price moves ${unit} ${sell ? "up" : "down"} from now. It never moves back.` : "";
   };
   g.legs.forEach((_, i) => {
     f("orderType", i).onchange = () => (f("price", i).disabled = f("orderType", i).value === "MARKET");
@@ -846,7 +934,7 @@ async function drawGtts(el, app, panels, b) {
   if (!box) return;
   box.innerHTML = await gttHtml();
   const n = el.querySelector("#brGttCount");
-  if (n) n.textContent = view.gtts.filter((g) => ["active", "needs-login", "placing"].includes(g.status)).length;
+  if (n) n.textContent = view.gtts.filter((g) => ["active", "needs-login", "placing", "waiting-fill"].includes(g.status)).length;
   box.querySelectorAll("tr[data-s]").forEach((tr) => (tr.onclick = (e) => !e.target.closest("button") && app.setSymbol(tr.dataset.s)));
   box.querySelectorAll("[data-gtt-edit]").forEach((x) => (x.onclick = () => openGttEdit(el, app, panels, b, view.gtts.find((g) => g.id === x.dataset.gttEdit))));
   box.querySelectorAll("[data-gtt-cancel]").forEach(

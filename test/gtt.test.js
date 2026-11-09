@@ -46,21 +46,21 @@ test("a single stop-loss places nothing until the price falls to it, then places
   assert.equal(t.alerts.length, 1);
 });
 
-test("a trailing stop follows the high by the trail %, never moves down, and fires on the pullback", async () => {
+test("a step trail: the stop moves one step for each whole step the price rises, never down", async () => {
   const t = setup();
   const g = gtt.add({ ...base, kind: "single", legs: [{ trigger: 95, orderType: "LIMIT", price: 94.5, trail: { type: "pct", value: 5 } }] }, 100);
   for (const p of [104, 110, 108]) {
     t.setPrice(p);
     await gtt.evaluate();
   }
-  // Best 110, 5% trail: stop 104.5, limit keeps its 0.5 offset below the trigger.
-  assert.equal(g.legs[0].trigger, 104.5);
-  assert.equal(g.legs[0].price, 104);
+  // Step 5 (5% of 100): best 110 is 2 steps up, so the stop is 95 + 10. The limit keeps its 0.5 offset.
+  assert.equal(g.legs[0].trigger, 105);
+  assert.equal(g.legs[0].price, 104.5);
   assert.equal(t.placed.length, 0, "108 is above the stop");
-  t.setPrice(104.4);
+  t.setPrice(104.9);
   await gtt.evaluate();
   assert.equal(t.placed.length, 1);
-  assert.equal(t.placed[0].price, 104);
+  assert.equal(t.placed[0].price, 104.5);
 });
 
 test("a trailing stop by points, for a short (buy stop above the price)", async () => {
@@ -68,8 +68,8 @@ test("a trailing stop by points, for a short (buy stop above the price)", async 
   const g = gtt.add({ ...base, side: "BUY", kind: "single", legs: [{ trigger: 106, orderType: "MARKET", trail: { type: "pts", value: 4 } }] }, 100);
   t.setPrice(90);
   await gtt.evaluate();
-  assert.equal(g.legs[0].trigger, 94); // lowest 90 + 4
-  t.setPrice(95);
+  assert.equal(g.legs[0].trigger, 98); // 10 below the start is 2 whole steps of 4: 106 - 8
+  t.setPrice(98);
   await gtt.evaluate();
   assert.equal(t.placed.length, 1);
   assert.equal(t.placed[0].side, "BUY");
@@ -142,11 +142,11 @@ test("an F&O stop trails, then sends a limit on the 0.05 tick with the position'
   assert.equal(g.symbol, "NFO:NIFTY26N0923900CE");
   t.setPrice(120);
   await gtt.evaluate();
-  assert.equal(g.legs[0].trigger, 108);
-  t.setPrice(107);
+  assert.equal(g.legs[0].trigger, 110); // 2 steps of 10
+  t.setPrice(109);
   await gtt.evaluate();
   assert.equal(t.placed.length, 1);
-  assert.deepEqual([t.placed[0].side, t.placed[0].qty, t.placed[0].product, t.placed[0].price, t.placed[0].fo], ["SELL", 65, "NRML", 106.35, FO]); // 106.33 to the tick
+  assert.deepEqual([t.placed[0].side, t.placed[0].qty, t.placed[0].product, t.placed[0].price, t.placed[0].fo], ["SELL", 65, "NRML", 108.35, FO]); // 108.33 to the tick
 });
 
 test("an F&O stop must be whole lots of a complete position", () => {
@@ -246,12 +246,12 @@ test("modify: new trigger and trail apply, and the changed stop then fires at th
   const g = gtt.add({ ...foBase, legs: [{ trigger: 95, orderType: "LIMIT", price: 94, trail: { type: "pct", value: 5 } }] }, 100);
   t.setPrice(120);
   await gtt.evaluate();
-  assert.equal(g.legs[0].trigger, 114);
+  assert.equal(g.legs[0].trigger, 115);
   const id = g.id;
   gtt.modify(id, { qty: 65, legs: [{ name: "trigger", trigger: 100, orderType: "LIMIT", price: 99, trail: { type: "pct", value: 20 } }] }, 120);
   assert.equal(g.legs[0].trail.best, 120);
   await gtt.evaluate();
-  assert.equal(g.legs[0].trigger, 100, "20% from 120 is 96, so the stop stays at 100 and doesn't snap back to 114");
+  assert.equal(g.legs[0].trigger, 100, "20% from 120 is 96, so the stop stays at 100 and doesn't snap back to 115");
   assert.equal(t.placed.length, 0);
   t.setPrice(99.9);
   await gtt.evaluate();
@@ -292,4 +292,62 @@ test("modify works on both legs of an OCO", () => {
   gtt.modify(g.id, { qty: 5, legs: [{ name: "stoploss", trigger: 92, orderType: "MARKET" }, { name: "target", trigger: 110, orderType: "LIMIT", price: 110 }] }, 100);
   assert.deepEqual(g.legs.map((l) => l.trigger), [92, 110]);
   assert.throws(() => gtt.modify(g.id, { qty: 5, legs: [{ name: "stoploss", trigger: 101, orderType: "MARKET" }, { name: "target", trigger: 110, orderType: "MARKET" }] }, 100), /must be below/);
+});
+
+test("today's INOXINDIA case: a small step trail no longer drags the stop next to the price", async () => {
+  const t = setup();
+  // Short at 1891.5; buy-back OCO: stop 20 above, target below, trailing 2 points.
+  const g = gtt.add({ ...base, side: "BUY", qty: 5, product: "MIS", kind: "oco", exit: true, legs: [{ name: "stoploss", trigger: 1908, orderType: "MARKET", trail: { type: "pts", value: 2 } }, { name: "target", trigger: 1828, orderType: "LIMIT", price: 1828 }] }, 1888);
+  for (const p of [1887.1, 1888.5, 1891, 1889.4]) {
+    t.setPrice(p);
+    await gtt.evaluate();
+  }
+  assert.equal(t.placed.length, 0, "small wobbles don't reach a stop 20 points away");
+  t.setPrice(1883.9); // 4.1 below the start: 2 whole steps, the stop comes down 4
+  await gtt.evaluate();
+  assert.equal(g.legs[0].trigger, 1904);
+  t.setPrice(1904);
+  await gtt.evaluate();
+  assert.deepEqual([t.placed.length, t.placed[0].side, t.placed[0].type, t.placed[0].exit], [1, "BUY", "MARKET", true]);
+  assert.equal(gtt.list().includes(g), false, "a fired OCO leaves the list");
+});
+
+test("intraday (MIS) GTTs end at 3:15 pm and can't be made after it", async () => {
+  const t = setup();
+  const g = gtt.add({ ...base, product: "MIS", kind: "single", legs: [{ trigger: 95, orderType: "MARKET" }] }, 100);
+  assert.equal(g.expiresAt, "2026-10-26T09:45:00.000Z");
+  gtt.configure({ now: () => Date.UTC(2026, 9, 26, 9, 46) });
+  await gtt.evaluate();
+  assert.equal(g.status, "expired");
+  assert.equal(t.placed.length, 0);
+  assert.throws(() => gtt.add({ ...base, product: "MIS", kind: "single", legs: [{ trigger: 95, orderType: "MARKET" }] }, 100), /until 3:15 pm/);
+});
+
+test("a stop-loss and target made with an order wait for the fill, then set from the fill price", async () => {
+  const t = setup();
+  let fill = { state: "open" };
+  gtt.configure({ orderFill: async () => fill });
+  const g = gtt.add({ ...base, qty: 10, exit: true, entry: { orderId: "E1", sl: 2, tg: 4 } });
+  assert.equal(g.status, "waiting-fill");
+  await gtt.evaluate();
+  assert.equal(g.status, "waiting-fill");
+  fill = { state: "filled", price: 100, qty: 8 };
+  await gtt.evaluate();
+  assert.deepEqual([g.status, g.kind, g.qty, g.legs.map((l) => [l.name, l.trigger, l.orderType])], ["active", "oco", 8, [["stoploss", 98, "MARKET"], ["target", 104, "LIMIT"]]]);
+  assert.equal(t.placed.length, 0);
+  const h = gtt.add({ ...base, side: "BUY", exit: true, entry: { orderId: "E2", sl: 1 } });
+  fill = { state: "closed", status: "REJECTED" };
+  await gtt.evaluate();
+  assert.equal(h.status, "cancelled");
+  assert.throws(() => gtt.add({ ...base, entry: { orderId: "E3" } }), /Stoploss or Target/);
+});
+
+test("a stock exit can't go past the open position or exit orders already working", async () => {
+  const { stockExitRoom } = await import("../lib/brokers.js");
+  const S = "YAHOO:INOXINDIA.NS";
+  const pf = (qty, orders = []) => ({ positions: [{ symbol: S, product: "MIS", qty }], orders });
+  assert.deepEqual(stockExitRoom(pf(-5), S, "MIS"), { side: "BUY", room: 5, qty: -5 });
+  assert.deepEqual(stockExitRoom(pf(-5, [{ symbol: S, product: "MIS", side: "BUY", qty: 5, status: "COMPLETE" }, { symbol: S, product: "MIS", side: "BUY", qty: 4, status: "OPEN" }]), S, "MIS").room, 1);
+  assert.equal(stockExitRoom(pf(0), S, "MIS").side, null, "no position: nothing can be exited");
+  assert.equal(stockExitRoom(pf(10), S, "CNC").side, null, "another product's position doesn't count");
 });

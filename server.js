@@ -249,7 +249,7 @@ gtt.configure({
     return stocks;
   },
   place: (id, body, ltp) => {
-    if (!body.fo) return brokers.placeOrder(id, body, ltp);
+    if (!body.fo) return body.exit ? brokers.placeStockExit(id, body, ltp) : brokers.placeOrder(id, body, ltp);
     if (body.allowOpen) return brokers.placeKotakOrder(id, { ...body, seg: body.fo.seg, token: body.fo.token }, ltp);
     return brokers.placeFnoExit(id, body);
   },
@@ -257,7 +257,11 @@ gtt.configure({
   accountName: (id) => brokers.status().accounts.find((a) => a.id === id)?.name || id,
   brokerOf: (id) => brokers.status().accounts.find((a) => a.id === id)?.broker || "",
   notify: (e) => broadcast("alert", { ...e, at: new Date().toISOString() }),
+  orderFill: (id, orderId) => brokers.orderFill(id, orderId),
 });
+// Exit GTTs already watching a position, so a second one can't sell (or buy back) more than it holds.
+const exitsOn = (account, match, product) =>
+  gtt.list().filter((g) => g.account === account && g.product === product && match(g) && (g.exit || (g.fo && !g.allowOpen)) && ["active", "needs-login", "placing"].includes(g.status)).reduce((sum, g) => sum + g.qty, 0);
 setInterval(() => {
   for (const res of clients) res.write(": keep-alive\n\n");
 }, 25000).unref();
@@ -474,14 +478,41 @@ async function handle(req, res) {
         // A second header just for live orders, on top of the x-qt check every write needs.
         if (req.headers["x-qt-live-order"] !== "confirmed")
           return send(res, 403, { error: "Live orders need confirming in the order ticket." });
+        // Exit a position now: the reverse order, which may only close what's open.
+        if (body.exit && body.tradingSymbol) {
+          const pos = await brokers.kotakFoPosition(acctId, body.tradingSymbol, body.product);
+          return send(res, 200, await brokers.placeFnoExit(acctId, { fo: pos.fo, side: body.side, qty: body.qty, type: body.type, price: body.price, product: pos.product }));
+        }
+        // A stop-loss and/or target (% from the fill) to set once this order fills, checked before sending.
+        const attach = body.attach && (body.attach.sl != null || body.attach.tg != null) ? body.attach : null;
+        if (attach && [attach.sl, attach.tg].some((v) => v != null && !(Number(v) > 0 && Number(v) < 50)))
+          return send(res, 400, { error: "Stoploss and Target are a % between 0 and 50." });
+        let r, holder;
         if (body.seg) {
           const key = `${body.seg}|${body.token}`;
           const prices = await brokers.foPrices([key]).catch(() => ({}));
-          return send(res, 200, await brokers.placeKotakOrder(acctId, body, prices[key]));
+          if (attach) {
+            const c = await brokers.kotakContract(body.seg, body.token);
+            if (c.kind !== "fo") return send(res, 400, { error: "Stoploss / Target with an order works for NSE stocks from the chart and for F&O contracts." });
+            holder = { fo: { seg: c.seg, token: c.token, tradingSymbol: c.trd, lot: c.lot, tick: c.tick } };
+          }
+          r = await brokers.placeKotakOrder(acctId, body, prices[key]);
+        } else {
+          const qt = await liveQuotes([String(body.symbol || "")]).catch(() => ({}));
+          const ltp = Object.values(qt)[0]?.price;
+          r = body.exit ? await brokers.placeStockExit(acctId, body, ltp) : await brokers.placeOrder(acctId, body, ltp);
+          holder = { symbol: body.symbol };
         }
-        const qt = await liveQuotes([String(body.symbol || "")]).catch(() => ({}));
-        const ltp = Object.values(qt)[0]?.price;
-        return send(res, 200, await brokers.placeOrder(acctId, body, ltp));
+        if (attach) {
+          try {
+            const side = String(body.side).toUpperCase() === "BUY" ? "SELL" : "BUY";
+            gtt.add({ account: acctId, ...holder, exit: true, side, qty: Number(body.qty), product: body.product, kind: "oco", entry: { orderId: r.orderId, sl: attach.sl, tg: attach.tg } });
+            r.gtt = true;
+          } catch (e) {
+            r.gttError = e.message;
+          }
+        }
+        return send(res, 200, r);
       }
       return send(res, 404, { error: "Unknown broker endpoint" });
     }
@@ -550,7 +581,16 @@ async function handle(req, res) {
             return send(res, 400, { error: `Only ${Math.max(0, pos.room - already)} of ${body.tradingSymbol} can still get a stop: the rest has exit orders or other stops on it.` });
           const key = `${pos.fo.seg}|${pos.fo.token}`;
           const ltp = (await brokers.foPrices([key]))[key];
-          return send(res, 200, view(gtt.add({ account: body.account, fo: pos.fo, side: pos.qty > 0 ? "SELL" : "BUY", product: pos.product, qty: Number(body.qty), kind: "single", legs: body.legs }, ltp)));
+          return send(res, 200, view(gtt.add({ account: body.account, fo: pos.fo, side: pos.qty > 0 ? "SELL" : "BUY", product: pos.product, qty: Number(body.qty), kind: body.kind === "oco" ? "oco" : "single", legs: body.legs }, ltp)));
+        }
+        if (body.exitSymbol) {
+          // An exit GTT on a stock position: its side comes from the broker, and it can't exceed what's open.
+          const product = String(body.product || "").toUpperCase();
+          const pos = await brokers.stockPosition(body.account, body.exitSymbol, product);
+          const left = pos.room - exitsOn(body.account, (g) => g.symbol === body.exitSymbol, product);
+          if (Number(body.qty) > left) return send(res, 400, { error: `Only ${Math.max(0, left)} can still get an exit: the rest has exit orders or another exit GTT on it.` });
+          const qt = await liveQuotes([body.exitSymbol]).catch(() => ({}));
+          return send(res, 200, view(gtt.add({ account: body.account, symbol: body.exitSymbol, exit: true, side: pos.side, product, qty: Number(body.qty), kind: body.kind === "oco" ? "oco" : "single", legs: body.legs }, Object.values(qt)[0]?.price)));
         }
         if (body.instrument) {
           // From the order window: the contract's details come from Kotak's list, not the browser.
@@ -582,6 +622,11 @@ async function handle(req, res) {
           const others = gtt.list().filter((x) => x.id !== g.id && x.account === g.account && x.fo?.tradingSymbol === g.fo.tradingSymbol && x.product === g.product && ["active", "needs-login", "placing"].includes(x.status));
           const left = pos.room - others.reduce((sum, x) => sum + x.qty, 0);
           if (Number(body.qty) > left) return send(res, 400, { error: `Only ${Math.max(0, left)} of ${g.fo.tradingSymbol} can have this stop: the rest has exit orders or other stops on it.` });
+        }
+        if (g.exit) {
+          const pos = await brokers.stockPosition(g.account, g.symbol, g.product);
+          const left = pos.room - exitsOn(g.account, (x) => x.id !== g.id && x.symbol === g.symbol, g.product);
+          if (Number(body.qty) > left) return send(res, 400, { error: `Only ${Math.max(0, left)} can have this exit: the rest has exit orders or another exit GTT on it.` });
         }
         const qt = g.fo ? { price: (await brokers.foPrices([`${g.fo.seg}|${g.fo.token}`]))[`${g.fo.seg}|${g.fo.token}`] } : Object.values(await liveQuotes([g.symbol]).catch(() => ({})))[0];
         return send(res, 200, view(gtt.modify(m[1], body, qt?.price)));
