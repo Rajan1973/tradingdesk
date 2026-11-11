@@ -1160,3 +1160,6 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 /* An order flow panel fills its pane */
 .flow-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; z-index: 4; background: #fff; }
 .pane:has(.flow-frame) .zoom-bar { display: none; }
+
+/* Scanner panel */
+.pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; background: var(--panel-2); border: 1px solid var(--border); white-space: nowrap; }

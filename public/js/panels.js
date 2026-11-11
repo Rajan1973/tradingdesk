@@ -11,6 +11,7 @@ import {
 } from "./api.js";
 import { INDICATORS, BY_ID, registerIndicator } from "../lib/indicators.js";
 import { renderNews, renderSeasonals, renderFinancials } from "./research.js";
+import { renderScanner } from "./scanner.js";
 import { renderBroker, initBroker, onBrokerSymbol, BROKER_LISTS } from "./broker.js";
 import { mountQuantChecks } from "./quantui.js";
 import {
@@ -262,6 +263,7 @@ export function initPanels(app) {
       ({
         tester: renderTester,
         screener: renderScreener,
+        scanner: () => renderScanner(bottom, app),
         heatmap: renderHeatmap,
         seasonals: () => renderSeasonals(bottom, app),
         financials: () => renderFinancials(bottom, app),

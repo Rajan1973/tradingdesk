@@ -154,3 +154,57 @@ export class PivotLayer {
     }
   }
 }
+
+// Earnings markers: a dashed vertical guide down to the time axis with a small "E" tag, on Daily
+// charts only. Separate from CatalystLayer's dots so a results date doesn't double-count there.
+export class EarningsLayer {
+  constructor(pane) {
+    this.pane = pane;
+    this.dates = []; // [{ time, date }], time = bar time the earnings date falls on
+    this._view = {
+      zOrder: () => "bottom",
+      renderer: () => ({
+        draw: (target) => target.useMediaCoordinateSpace(({ context, mediaSize }) => this.draw(context, mediaSize)),
+      }),
+    };
+  }
+
+  attached({ requestUpdate }) {
+    this.requestUpdate = requestUpdate;
+  }
+  detached() {
+    this.dates = [];
+  }
+  updateAllViews() {}
+  paneViews() {
+    return [this._view];
+  }
+  set(dates) {
+    this.dates = dates || [];
+    this.requestUpdate?.();
+  }
+
+  draw(ctx, mediaSize) {
+    const pane = this.pane;
+    if (!this.dates.length || pane.cfg?.tf !== "1D") return;
+    ctx.save();
+    ctx.setLineDash([3, 3]);
+    ctx.strokeStyle = "rgba(255, 152, 0, 0.55)";
+    ctx.fillStyle = "#ff9800";
+    ctx.font = `10px ${pane.chart.options().layout.fontFamily}`;
+    ctx.textAlign = "center";
+    for (const { time } of this.dates) {
+      const x = pane.timeToX(time);
+      if (x == null) continue;
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, mediaSize.height);
+      ctx.stroke();
+      ctx.fillRect(x - 6, mediaSize.height - 14, 12, 12);
+      ctx.fillStyle = "#1b1b1b";
+      ctx.fillText("E", x, mediaSize.height - 4);
+      ctx.fillStyle = "#ff9800";
+    }
+    ctx.restore();
+  }
+}

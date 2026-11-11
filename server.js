@@ -22,6 +22,10 @@ import * as orderflow from "./lib/orderflow.js";
 import * as cryptoflow from "./lib/cryptoflow.js";
 import * as upstox from "./lib/upstox.js";
 import * as catalysts from "./lib/catalysts.js";
+import * as scanner from "./lib/scanner.js";
+import * as marketHours from "./lib/market-hours.js";
+import * as exitPlanner from "./lib/exit-planner.js";
+import * as squareoff from "./lib/squareoff.js";
 import { registerIndicator, INDICATORS } from "./public/lib/indicators.js";
 import { conditionFn, backtest, magnifierTf } from "./public/lib/backtest.js";
 import { quantChecks } from "./public/lib/quant.js";
@@ -357,6 +361,7 @@ async function handle(req, res) {
     if (p === "/api/dividends") return send(res, 200, await info.dividends(Number(q.days) || 5));
     if (p === "/api/news") return send(res, 200, await info.news(q.symbol));
     if (p === "/api/financials") return send(res, 200, await info.financials(q.symbol, q.frequency));
+    if (p === "/api/earnings-history") return send(res, 200, await info.earningsHistory(q.symbol));
     // Broker accounts: only from this computer, even if HOST opens the terminal to your network.
     if (p.startsWith("/api/broker/")) {
       const ip = req.socket.remoteAddress || "";
@@ -684,6 +689,11 @@ async function handle(req, res) {
       });
       return send(res, 200, results);
     }
+    if (p === "/api/scanner/watchlist") return send(res, 200, scanner.list());
+    if (p === "/api/scanner/run" && req.method === "POST") {
+      const body = await readBody(req);
+      return send(res, 200, await scanner.run(body.universe));
+    }
     // The strategy tester on the server, for your own code (docs/api.md). Same rule format as the tester.
     if (p === "/api/backtest" && req.method === "POST") {
       const body = await readBody(req);
@@ -806,6 +816,32 @@ async function handle(req, res) {
       if (req.method === "PATCH")
         return send(res, 200, alerts.update(id, await readBody(req)));
     }
+    if (p === "/api/entry/arm" && req.method === "POST") {
+      const body = await readBody(req);
+      if (!body.symbol || body.level == null) throw httpError(400, "Send { symbol, level, tf? }");
+      const window = marketHours.isEntryWindowOpen(Date.now(), body.config || {});
+      if (!window.open) throw httpError(409, window.reason);
+      const a = alerts.add({
+        symbol: body.symbol,
+        tf: body.tf || "5m",
+        left: "close",
+        op: "crossesAbove",
+        right: Number(body.level),
+        trigger: "oncePerBarClose",
+        tag: "entry",
+        message: body.message || `Entry: ${body.symbol} closed above ${body.level}`,
+      });
+      return send(res, 200, a);
+    }
+    if (p === "/api/exit-plan" && req.method === "POST") {
+      return send(res, 200, await exitPlanner.plan(await readBody(req)));
+    }
+    if (p === "/api/squareoff" && req.method === "GET") return send(res, 200, squareoff.list());
+    if (p === "/api/squareoff" && req.method === "POST") return send(res, 200, squareoff.add(await readBody(req)));
+    if (p.startsWith("/api/squareoff/") && req.method === "DELETE") {
+      squareoff.remove(p.split("/")[3]);
+      return send(res, 200, { ok: true });
+    }
     if (p === "/api/webhook-test" && req.method === "POST") {
       const { url: hook } = await readBody(req);
       if (!/^https?:\/\/[^\s]+$/i.test(String(hook || "")))
@@ -915,6 +951,8 @@ if (isMain) {
   gtt.start();
   orderflow.start();
   upstox.start();
+  scanner.start();
+  squareoff.start();
   console.log(
     `\n  Quant Terminal ${VERSION} is running\n\n  Open:  ${url}\n  Stop:  Ctrl+C\n  Data:  ${store.DATA_DIR}\n`,
   );

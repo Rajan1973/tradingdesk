@@ -14,7 +14,7 @@ import {
 import { DrawingLayer, TOOL_BY_ID } from "./drawings.js";
 import { VolumeProfile, SessionVolumeProfile } from "./volume-profile.js";
 import { MarketProfileLayer } from "./market-profile-draw.js";
-import { CatalystLayer, PivotLayer } from "./catalyst-layer.js";
+import { CatalystLayer, PivotLayer, EarningsLayer } from "./catalyst-layer.js";
 import { markerType } from "../lib/marker-types.js";
 
 const LW = window.LightweightCharts;
@@ -384,6 +384,8 @@ export class ChartPane {
     this.main.attachPrimitive(this.catLayer);
     this.pivotLayer = new PivotLayer(this);
     this.main.attachPrimitive(this.pivotLayer);
+    this.earningsLayer = new EarningsLayer(this);
+    this.main.attachPrimitive(this.earningsLayer);
     this.markers = LW.createSeriesMarkers(this.main, []);
     this.mainType = t;
     if (
@@ -510,6 +512,7 @@ export class ChartPane {
       this.notes = r.notes || [];
       this.bars = r.candles;
       this.loadCatalysts(r.symbol, token);
+      this.loadEarnings(r.symbol, token);
       this.mtf = {};
       this.replay = null;
       this.el.querySelector(".replay-bar")?.remove();
@@ -849,6 +852,7 @@ export class ChartPane {
   applyMarkers() {
     this.buildCatalysts();
     this.catLayer?.update();
+    this.buildEarnings();
     const all = [...this.indMarkers, ...this.extraMarkers]
       .map((m) => ({ ...m, utc: m.time, time: this.toChart(m.time) }))
       .filter((m) => !this.replay || m.time <= this.times.at(-1));
@@ -897,11 +901,30 @@ export class ChartPane {
       .get(`/api/catalysts?symbol=${encodeURIComponent(symbol)}`)
       .catch(() => []);
     if (token !== this.loadToken) return;
-    this.catalysts = list;
+    // Results dates go on the earnings layer (a dashed line to the axis), not a catalyst dot.
+    this.catalysts = list.filter((e) => e.theme !== "Results");
+    this.earningsDates = list.filter((e) => e.theme === "Results").map((e) => e.date);
     if (this.bars.length) {
       this.applyMarkers();
       this.updateLegend();
     }
+  }
+
+  // ---------- earnings marker (dashed "E" line, Daily charts only) ----------
+  async loadEarnings(symbol, token) {
+    if (parseTf(this.cfg.tf).seconds < 86400) return;
+    if (/^YAHOO:.+\.(NS|BO)$/i.test(symbol)) return; // India comes from loadCatalysts's "Results" events
+    const rows = await api.get(`/api/earnings-history?symbol=${encodeURIComponent(symbol)}`).catch(() => []);
+    if (token !== this.loadToken) return;
+    this.earningsDates = rows.map((r) => r.date);
+    if (this.bars.length) this.buildEarnings();
+  }
+
+  buildEarnings() {
+    const dates = [...new Set(this.earningsDates || [])]
+      .map((date) => ({ date, time: this.catalystBar(date) }))
+      .filter((d) => d.time != null);
+    this.earningsLayer?.set(dates);
   }
 
   // The bar an event belongs to: the first bar on or after its date (IST) on daily and
