@@ -511,6 +511,20 @@ export class ChartPane {
       this.provider = r.provider;
       this.notes = r.notes || [];
       this.bars = r.candles;
+      // Flag daily data stuck behind 2+ weekdays (a quiet provider outage) without false-alarming
+      // over an ordinary weekend. shortcut: weekday-only, doesn't know real NSE holidays.
+      if (this.cfg.tf === "1D" && this.bars.length) {
+        const DAY = 86400e3, IST = 5.5 * 3600e3;
+        const lastDay = Math.floor((this.bars.at(-1).time * 1000) / DAY);
+        const today = Math.floor((Date.now() + IST) / DAY);
+        let missedWeekdays = 0;
+        for (let d = lastDay + 1; d < today; d++) {
+          const wd = new Date(d * DAY).getUTCDay();
+          if (wd >= 1 && wd <= 5) missedWeekdays++;
+        }
+        if (missedWeekdays >= 2)
+          this.notes.push(`Data hasn't updated since ${new Date(lastDay * DAY).toISOString().slice(0, 10)} (${today - lastDay} days old) — the data source may be lagging.`);
+      }
       this.loadCatalysts(r.symbol, token);
       this.loadEarnings(r.symbol, token);
       this.mtf = {};
