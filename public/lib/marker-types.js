@@ -32,6 +32,7 @@ export const NSE_THEME_COLORS = {
   "Capacity / Commissioning": "#7cb342",
   "Credit rating": "#90a4ae",
   "Regulatory / Legal": "#ec407a",
+  "Compliance / Audit": "#f4511e",
   News: "#e0e0e0",
 };
 export const ANALYST_COLORS = { buy: "#00c853", hold: "#ffb300", sell: "#ff1744", none: "#90a4ae" };

@@ -18,6 +18,7 @@ import * as store from "./lib/store.js";
 import * as info from "./lib/market-info.js";
 import * as brokers from "./lib/brokers.js";
 import * as gtt from "./lib/gtt.js";
+import * as stockCheck from "./lib/stock-check.js";
 import * as orderflow from "./lib/orderflow.js";
 import * as cryptoflow from "./lib/cryptoflow.js";
 import * as upstox from "./lib/upstox.js";
@@ -544,6 +545,7 @@ async function handle(req, res) {
         }
       }
     }
+    if (p === "/api/stockcheck") return send(res, 200, await stockCheck.check(q.q, q.days));
     if (p === "/api/orderflow/names") return send(res, 200, orderflow.names());
     if (p === "/api/orderflow/bars") {
       const w = orderflow.instrumentOf(q.symbol);

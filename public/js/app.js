@@ -380,6 +380,15 @@ class App {
       this.toast("Click the bar you want replay to start from.");
     };
     $("#alertBtn").onclick = () => this.panels.openAlertDialog();
+    // Stock check opens in its own window (the same one each time), on the chart's NSE stock.
+    // If pop-ups are blocked, the link itself opens it in a new tab.
+    $("#stockCheckLink").onclick = (e) => {
+      const nse = /^YAHOO:(.+)\.(NS|BO)$/.exec(this.active?.cfg.symbol || "")?.[1];
+      const url = nse ? `/stockcheck.html?q=${encodeURIComponent(nse)}` : "/stockcheck.html";
+      $("#stockCheckLink").href = url;
+      const w = window.open(url, "qtStockCheck", "width=1000,height=780");
+      if (w) e.preventDefault(), w.focus();
+    };
     $("#logBtn").onclick = () => {
       this.active.cfg.log = !this.active.cfg.log;
       this.active.render(false);

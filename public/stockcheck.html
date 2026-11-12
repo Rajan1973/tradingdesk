@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Stock Check</title>
+<style>
+  /* Stock check: one company's filings, news and broker calls over 7 to 90 days, filterable by kind. */
+  :root {
+    --bg: #fff; --panel: #f7f8fa; --ink: #1f2937; --muted: #6b7280; --line: #e5e7eb;
+    --accent: #2962ff; --bad: #c62828; --chip: #eef2ff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131722; --panel: #1b2030; --ink: #d9dce3; --muted: #8b93a7; --line: #2a3142; --accent: #5b8cff; --bad: #ef5350; --chip: #1f2a48; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink); font: 13px/1.45 system-ui, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: 10px 14px; display: grid; gap: 8px; }
+  form { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  h1 { font-size: 15px; margin: 0 6px 0 0; }
+  label { display: inline-flex; gap: 6px; align-items: center; color: var(--muted); }
+  input, select, button { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; min-height: 28px; }
+  #q { width: 220px; }
+  button { cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  #status { color: var(--muted); }
+  #status.err { color: var(--bad); }
+  #company { font-weight: 600; }
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--line); border-radius: 14px; padding: 2px 9px 2px 6px; background: var(--panel); color: var(--ink); cursor: pointer; user-select: none; }
+  .chip input { margin: 0; min-height: 0; }
+  .chip .n { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chip.zero { opacity: 0.55; }
+  .sw { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .link { background: none; border: 0; color: var(--accent); padding: 0 4px; min-height: 0; }
+  main { padding: 6px 14px 30px; }
+  .day { margin-top: 12px; }
+  .day h2 { font-size: 12px; margin: 0 0 4px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .item { display: grid; grid-template-columns: 190px 1fr; gap: 4px 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .tag { display: inline-flex; gap: 6px; align-items: baseline; font-weight: 600; font-size: 12px; }
+  .tag .sw { align-self: center; }
+  .detail { display: block; color: var(--muted); font-weight: 400; font-size: 11px; margin-left: 15px; }
+  .body { min-width: 0; }
+  .body a { color: var(--ink); text-decoration: none; }
+  .body a:hover { color: var(--accent); text-decoration: underline; }
+  .src { color: var(--muted); font-size: 11px; }
+  .neg .body a, .neg .tag { color: var(--bad); }
+  .empty { color: var(--muted); padding: 30px 0; text-align: center; }
+  @media (max-width: 560px) { .item { grid-template-columns: 1fr; } #q { width: 100%; } }
+</style>
+</head>
+<body>
+<header>
+  <form id="f">
+    <h1>Stock check</h1>
+    <label>Stock <input id="q" autocomplete="off" placeholder="Name or NSE code: HFCL, Tata Power" aria-label="Stock name or NSE code" /></label>
+    <label>Last <select id="days" aria-label="How far back">
+      <option value="7">7 days</option><option value="15">15 days</option><option value="30">30 days</option><option value="60">60 days</option><option value="90">90 days</option>
+    </select></label>
+    <button class="primary" type="submit">Search</button>
+    <span id="company"></span>
+    <span id="status"></span>
+  </form>
+  <div class="filters" id="filters" aria-label="Show these kinds"></div>
+</header>
+<main id="list"><p class="empty">Enter a stock and press Search. It looks through NSE filings, news headlines and broker calls.</p></main>
+
+<script>
+const COLORS = {
+  "Order book": "#2962ff", QIP: "#5c6bc0", "Preferential issue": "#7e57c2", "Rights / other fund raising": "#9575cd",
+  "JV / Agreement": "#ab47bc", "M&A / Restructuring": "#00acc1", "Credit rating": "#78909c", "Compliance / Audit / Legal": "#e53935",
+  "Corporate action": "#f9a825", Results: "#fb8c00", "Capacity / Commissioning": "#7cb342", "Analyst / brokerage report": "#00a152", "Other news": "#9e9e9e",
+};
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const store = {
+  get(k, d) { try { return JSON.parse(localStorage.getItem(`qt.sc.${k}`)) ?? d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(`qt.sc.${k}`, JSON.stringify(v)); } catch {} },
+};
+let data = null;
+let off = new Set(store.get("off", []));
+
+function drawFilters() {
+  if (!data) return;
+  $("#filters").innerHTML =
+    data.groups.map((g) => `<label class="chip ${data.counts[g] ? "" : "zero"}"><input type="checkbox" data-g="${esc(g)}" ${off.has(g) ? "" : "checked"}><span class="sw" style="background:${COLORS[g]}"></span>${esc(g)} <span class="n">${data.counts[g]}</span></label>`).join("") +
+    `<button type="button" class="link" id="all">All</button><button type="button" class="link" id="none">None</button>`;
+  $("#filters").querySelectorAll("[data-g]").forEach((c) => (c.onchange = () => { c.checked ? off.delete(c.dataset.g) : off.add(c.dataset.g); store.set("off", [...off]); drawList(); }));
+  $("#all").onclick = () => { off = new Set(); store.set("off", []); drawFilters(); drawList(); };
+  $("#none").onclick = () => { off = new Set(data.groups); store.set("off", [...off]); drawFilters(); drawList(); };
+}
+
+function drawList() {
+  const shown = data.items.filter((i) => !off.has(i.group));
+  if (!shown.length) return ($("#list").innerHTML = `<p class="empty">${data.items.length ? "Nothing in the kinds you've ticked. Tick more above." : `Nothing found for ${esc(data.name)} in the last ${data.days} days.`}</p>`);
+  const days = new Map();
+  for (const i of shown) days.set(i.date, [...(days.get(i.date) || []), i]);
+  const fmt = (d) => new Date(`${d}T00:00:00`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  $("#list").innerHTML = [...days]
+    .map(([d, list]) => `<section class="day"><h2>${fmt(d)}</h2>${list
+      .map((i) => `<div class="item ${i.negative ? "neg" : ""}">
+        <div class="tag"><span class="sw" style="background:${COLORS[i.group]}"></span><span>${esc(i.group)}${i.detail ? `<span class="detail">${esc(i.detail)}</span>` : ""}</span></div>
+        <div class="body">${i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>` : esc(i.title)}${i.headline && i.headline !== i.title ? `<div class="src">“${esc(i.headline)}”</div>` : ""}<div class="src">${esc(i.source)}</div></div>
+      </div>`).join("")}</section>`)
+    .join("");
+}
+
+async function search() {
+  const q = $("#q").value.trim(), days = $("#days").value;
+  if (!q) return $("#q").focus();
+  store.set("q", q);
+  store.set("days", days);
+  history.replaceState(null, "", `?q=${encodeURIComponent(q)}&days=${days}`);
+  $("#status").className = "";
+  $("#status").textContent = "Searching NSE filings and news…";
+  $("#company").textContent = "";
+  try {
+    const res = await fetch(`/api/stockcheck?q=${encodeURIComponent(q)}&days=${days}`);
+    const j = await res.json();
+    if (!res.ok) throw new Error(j.error || `HTTP ${res.status}`);
+    data = j;
+    document.title = `${j.symbol} · Stock Check`;
+    $("#company").textContent = `${j.name} (${j.symbol})`;
+    $("#status").textContent = `${j.items.length} items since ${new Date(`${j.since}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}`;
+    drawFilters();
+    drawList();
+  } catch (e) {
+    $("#status").className = "err";
+    $("#status").textContent = e.message;
+  }
+}
+
+$("#f").onsubmit = (e) => (e.preventDefault(), search());
+$("#days").onchange = () => $("#q").value.trim() && search();
+const p = new URLSearchParams(location.search);
+$("#q").value = p.get("q") || store.get("q", "");
+$("#days").value = p.get("days") || store.get("days", "7");
+if ($("#q").value) search();
+else $("#q").focus();
+</script>
+</body>
+</html>
