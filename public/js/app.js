@@ -384,7 +384,7 @@ class App {
     // If pop-ups are blocked, the link itself opens it in a new tab.
     $("#stockCheckLink").onclick = (e) => {
       const nse = /^YAHOO:(.+)\.(NS|BO)$/.exec(this.active?.cfg.symbol || "")?.[1];
-      const url = nse ? `/stockcheck.html?q=${encodeURIComponent(nse)}` : "/stockcheck.html";
+      const url = `/stockcheck.html?theme=${this.settings.theme === "light" ? "light" : "dark"}${nse ? `&q=${encodeURIComponent(nse)}` : ""}`;
       $("#stockCheckLink").href = url;
       const w = window.open(url, "qtStockCheck", "width=1000,height=780");
       if (w) e.preventDefault(), w.focus();

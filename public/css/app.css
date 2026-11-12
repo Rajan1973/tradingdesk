@@ -13,7 +13,7 @@
   --hover: #2a2e39;
   --grid: rgba(42, 46, 57, 0.6);
   --input: #131722;
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   --gold: #d4a514;
   --gold-soft: rgba(212, 165, 20, 0.16);
   --scroll: #363a45;
@@ -21,6 +21,9 @@
   --up-text: #26b39b;
   --down-text: #f96a73;
   --accent-text: #6b98ff;
+  --warn: #f7a600;
+  --warn-text: #f7a600;
+  --purple-text: #ce93d8;
   color-scheme: dark;
 }
 [data-theme="light"] {
@@ -37,13 +40,16 @@
   --hover: #eef0f6;
   --grid: rgba(224, 227, 235, 0.7);
   --input: #ffffff;
-  --shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+  --shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
   --gold: #b8860b;
   --gold-soft: rgba(184, 134, 11, 0.14);
   --scroll: #c9cdd6;
   --up-text: #057060;
   --down-text: #c81e2b;
   --accent-text: #1f4fd6;
+  --warn: #f7a600;
+  --warn-text: #8f5400;
+  --purple-text: #8e24aa;
   color-scheme: light;
 }
 * {
@@ -240,7 +246,7 @@ select.tb option {
   background: var(--up);
 }
 .status.warn {
-  background: #f7a600;
+  background: var(--warn);
 }
 .status.bad {
   background: var(--down);
@@ -353,7 +359,7 @@ select.tb option {
   white-space: nowrap;
 }
 .legend .src.live {
-  color: #089981;
+  color: var(--up-text);
   font-weight: 600;
 }
 .legend .title {
@@ -407,7 +413,7 @@ select.tb option {
   height: 14px;
 }
 .legend .note {
-  color: #f7a600;
+  color: var(--warn-text);
   font-size: 11px;
   pointer-events: auto;
   white-space: normal;
@@ -678,8 +684,16 @@ table.t tbody tr:hover {
   color: var(--muted);
   padding: 0;
 }
-.wl-row:hover .x {
+.wl-row:hover .x,
+.wl-row .x:focus-visible {
   opacity: 1;
+}
+/* A 24px target around the 14px icon (WCAG 2.5.8). */
+.wl-row .x {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
 }
 .wl-row .x svg {
   width: 14px;
@@ -709,7 +723,7 @@ table.t tbody tr:hover {
   color: var(--down-text);
 }
 .impact-Medium {
-  color: #f7a600;
+  color: var(--warn-text);
 }
 .impact-Low {
   color: var(--muted);
@@ -981,20 +995,31 @@ h4 {
   gap: 8px;
 }
 .toast {
+  /* One edge (the border); a dot in the message's colour says what kind it is. */
+  position: relative;
   background: var(--panel);
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 10px 12px 10px 26px;
   box-shadow: var(--shadow);
   max-width: 360px;
   animation: in 0.2s ease-out;
 }
-.toast.err {
-  border-left-color: var(--down);
+.toast::before {
+  content: "";
+  position: absolute;
+  left: 11px;
+  top: 16px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
 }
-.toast.alert {
-  border-left-color: #f7a600;
+.toast.err::before {
+  background: var(--down);
+}
+.toast.alert::before {
+  background: var(--warn);
 }
 @keyframes in {
   from {
@@ -1014,7 +1039,7 @@ h4 {
 
 /* verdict pill for the strategy tester's quant checks */
 .quant-verdict { display: inline-block; margin: 8px 0; padding: 4px 10px; border-radius: 4px; font-weight: 600; background: var(--hover); }
-.quant-verdict.up { color: var(--up-text); } .quant-verdict.down { color: var(--down-text); } .quant-verdict.warn { color: #f7a600; }
+.quant-verdict.up { color: var(--up-text); } .quant-verdict.down { color: var(--down-text); } .quant-verdict.warn { color: var(--warn-text); }
 .tester code { background: var(--hover); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
 
 /* news */
@@ -1055,7 +1080,7 @@ a.card.news:hover { border-color: var(--accent); }
 #tQuant { margin-top: 4px; }
 table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px solid var(--gold); outline-offset: -2px; font-weight: 700; }
 /* catalyst markers: hover card */
-.cat-tip { position: fixed; z-index: 1000; max-width: min(380px, calc(100vw - 16px)); padding: 8px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35); color: var(--text); font-size: 12px; line-height: 1.45; pointer-events: none; white-space: normal; }
+.cat-tip { position: fixed; z-index: 1000; max-width: min(380px, calc(100vw - 16px)); padding: 8px 10px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--text); font-size: 12px; line-height: 1.45; pointer-events: none; white-space: normal; }
 .cat-tip.hidden { display: none; }
 .cat-item + .cat-item { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); }
 .cat-meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
@@ -1064,11 +1089,11 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .bar-countdown { position: absolute; z-index: 4; height: 16px; line-height: 16px; text-align: center; color: #fff; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
 .bar-countdown.hidden { display: none; }
 /* right-click menu on charts */
-.chart-menu { position: fixed; z-index: 1001; min-width: 180px; padding: 4px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35); }
+.chart-menu { position: fixed; z-index: 1001; min-width: 180px; padding: 4px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow); }
 .chart-menu button { display: block; width: 100%; text-align: left; padding: 7px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; }
 .chart-menu button:hover { background: var(--hover); }
 /* zoom out / in / reset, bottom centre of each chart while hovered */
-.zoom-bar { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 5; display: flex; gap: 2px; padding: 3px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3); opacity: 0; pointer-events: none; transition: opacity 0.15s; }
+.zoom-bar { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); z-index: 5; display: flex; gap: 2px; padding: 3px; border-radius: 6px; background: var(--panel); border: 1px solid var(--border); box-shadow: var(--shadow); opacity: 0; pointer-events: none; transition: opacity 0.15s; }
 .pane:hover .zoom-bar { opacity: 1; pointer-events: auto; }
 .pane:has(.replay-bar) .zoom-bar { display: none; }
 .zoom-bar button { display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text); cursor: pointer; }
@@ -1085,7 +1110,7 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .mk-grid label.mk-wide { grid-column: 1 / -1; flex-wrap: wrap; }
 .mk-key .mk-sw { margin: 0 2px; }
 /* fold / unfold the indicator list in a chart's legend */
-.legend .lg-toggle { pointer-events: auto; margin-top: 2px; padding: 0 7px; height: 20px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--muted); font-size: 12px; line-height: 18px; cursor: pointer; }
+.legend .lg-toggle { pointer-events: auto; margin-top: 2px; padding: 0 8px; height: 24px; min-width: 24px; border: 1px solid var(--border); border-radius: 4px; background: var(--panel); color: var(--muted); font-size: 12px; line-height: 22px; cursor: pointer; }
 .legend .lg-toggle:hover { color: var(--text); border-color: var(--muted); }
 
 /* order window (Broker tab), in the style of Zerodha's: blue for buy, orange for sell */
@@ -1115,8 +1140,8 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .ow-field.off input { opacity: 0.5; }
 .ow-leg { border-top: 1px dashed var(--border); padding-top: 6px; margin-top: 6px; }
 .ow-tag { display: inline-block; padding: 1px 8px; border-radius: 3px; font-size: 12px; }
-.ow-tag.sl { background: rgba(156, 39, 176, 0.18); color: #ce93d8; }
-.ow-tag.tg { background: rgba(156, 39, 176, 0.18); color: #ce93d8; }
+.ow-tag.sl { background: rgba(156, 39, 176, 0.18); color: var(--purple-text); }
+.ow-tag.tg { background: rgba(156, 39, 176, 0.18); color: var(--purple-text); }
 .ow-note { margin: 8px 0 2px; }
 /* Zerodha-style GTT strip under a regular order: Stoploss % / Target % set once it fills. */
 .ow-att { align-items: center; gap: 6px 8px; border-top: 1px solid var(--border); padding-top: 8px; }
@@ -1162,7 +1187,7 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .layout-opt { flex: none; display: grid; place-items: center; width: 36px; height: 32px; padding: 0; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 5px; cursor: pointer; }
 .layout-opt:hover { background: var(--hover); }
 .layout-opt:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.layout-opt.on { color: #f59e0b; border-color: #f59e0b; background: rgba(245, 158, 11, 0.14); }
+.layout-opt.on { color: var(--warn-text); border-color: var(--warn); background: rgba(245, 158, 11, 0.14); }
 
 /* An order flow panel fills its pane */
 .flow-frame { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; z-index: 4; background: #fff; }
