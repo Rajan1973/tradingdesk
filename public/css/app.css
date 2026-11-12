@@ -5,7 +5,7 @@
   --panel-2: #2a2e39;
   --border: #2a2e39;
   --text: #d1d4dc;
-  --muted: #787b86;
+  --muted: #9598a1;
   --accent: #2962ff;
   --accent-soft: rgba(41, 98, 255, 0.18);
   --up: #089981;
@@ -17,6 +17,10 @@
   --gold: #d4a514;
   --gold-soft: rgba(212, 165, 20, 0.16);
   --scroll: #363a45;
+  /* Text shades: candles and fills keep --up/--down/--accent; words need 4.5:1 on every panel. */
+  --up-text: #26b39b;
+  --down-text: #f96a73;
+  --accent-text: #6b98ff;
   color-scheme: dark;
 }
 [data-theme="light"] {
@@ -37,6 +41,9 @@
   --gold: #b8860b;
   --gold-soft: rgba(184, 134, 11, 0.14);
   --scroll: #c9cdd6;
+  --up-text: #057060;
+  --down-text: #c81e2b;
+  --accent-text: #1f4fd6;
   color-scheme: light;
 }
 * {
@@ -103,10 +110,10 @@ svg {
   flex: 1;
 }
 .up {
-  color: var(--up);
+  color: var(--up-text);
 }
 .down {
-  color: var(--down);
+  color: var(--down-text);
 }
 .muted {
   color: var(--muted);
@@ -161,7 +168,7 @@ a.tb {
   background: var(--hover);
 }
 .tb.on {
-  color: var(--accent);
+  color: var(--accent-text);
 }
 .tb.icon {
   padding: 0 7px;
@@ -207,7 +214,7 @@ select.tb option {
   background: var(--hover);
 }
 .tf-group button.active {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 .tf-custom {
@@ -268,7 +275,7 @@ select.tb option {
   background: var(--hover);
 }
 .drawbar button.active {
-  color: var(--accent);
+  color: var(--accent-text);
   background: var(--accent-soft);
 }
 .drawbar hr {
@@ -570,10 +577,10 @@ textarea.in {
   font-size: 12px;
 }
 .btn.danger {
-  color: var(--down);
+  color: var(--down-text);
 }
 .link {
-  color: var(--accent);
+  color: var(--accent-text);
   cursor: pointer;
   text-decoration: none;
 }
@@ -699,7 +706,7 @@ table.t tbody tr:hover {
   margin-top: 2px;
 }
 .impact-High {
-  color: var(--down);
+  color: var(--down-text);
 }
 .impact-Medium {
   color: #f7a600;
@@ -922,7 +929,7 @@ h4 {
 }
 .sym-mkt button.on {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-text);
   opacity: 1;
   box-shadow: inset 0 -2px 0 var(--accent);
 }
@@ -1007,7 +1014,7 @@ h4 {
 
 /* verdict pill for the strategy tester's quant checks */
 .quant-verdict { display: inline-block; margin: 8px 0; padding: 4px 10px; border-radius: 4px; font-weight: 600; background: var(--hover); }
-.quant-verdict.up { color: var(--up); } .quant-verdict.down { color: var(--down); } .quant-verdict.warn { color: #f7a600; }
+.quant-verdict.up { color: var(--up-text); } .quant-verdict.down { color: var(--down-text); } .quant-verdict.warn { color: #f7a600; }
 .tester code { background: var(--hover); padding: 1px 4px; border-radius: 3px; font-size: 12px; }
 
 /* news */
@@ -1067,7 +1074,7 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .zoom-bar button { display: grid; place-items: center; width: 28px; height: 26px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text); cursor: pointer; }
 .zoom-bar button:hover { background: var(--hover); }
 .zoom-bar svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.cat-link { color: var(--accent); }
+.cat-link { color: var(--accent-text); }
 /* Settings: which chart markers show */
 .mk-filter { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
 .mk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 14px; margin-top: 8px; font-size: 13px; }
@@ -1084,8 +1091,8 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 /* order window (Broker tab), in the style of Zerodha's: blue for buy, orange for sell */
 .ow { border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--panel); margin-bottom: 12px; }
 .ow-head { padding: 9px 12px; color: #fff; }
-.ow-head.buy { background: #4184f3; }
-.ow-head.sell { background: #ff5722; }
+.ow-head.buy { background: #3366d6; }
+.ow-head.sell { background: #cf4214; }
 .ow-head .muted { color: rgba(255, 255, 255, 0.85); }
 .ow-ex { display: flex; gap: 16px; margin-top: 6px; font-size: 12px; }
 .ow-ex label { display: inline-flex; align-items: center; gap: 4px; }
@@ -1097,7 +1104,7 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .ow-switch input:checked + span::before { transform: translateX(16px); }
 .ow-tabs { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--border); align-items: center; }
 .ow-tabs button { border: 0; background: transparent; color: var(--muted); padding: 8px 12px; cursor: pointer; font: inherit; border-bottom: 2px solid transparent; }
-.ow-tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+.ow-tabs button.on { color: var(--accent-text); border-bottom-color: var(--accent); }
 .ow-body { padding: 8px 12px; }
 .ow-row { gap: 10px 14px; margin: 6px 0; flex-wrap: wrap; }
 .ow-radio { display: inline-flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer; }
@@ -1117,21 +1124,21 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 .ow-pct { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
 .ow-pct input { width: 48px; }
 .ow-pct.off input { opacity: 0.5; }
-.ow-info { cursor: help; color: var(--accent); }
-.ow-err { color: var(--down); background: rgba(242, 54, 69, 0.1); border-radius: 4px; padding: 6px 10px; margin: 8px 0 0; }
+.ow-info { cursor: help; color: var(--accent-text); }
+.ow-err { color: var(--down-text); background: rgba(242, 54, 69, 0.1); border-radius: 4px; padding: 6px 10px; margin: 8px 0 0; }
 .pos-dots { padding: 0 8px; font-size: 16px; line-height: 1.2; }
 .ow-foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); }
 .ow-avail { padding: 0 12px 8px; }
-.btn.ow-buy { background: #4184f3; border-color: #4184f3; color: #fff; min-width: 90px; }
-.btn.ow-sell { background: #ff5722; border-color: #ff5722; color: #fff; min-width: 90px; }
+.btn.ow-buy { background: #3366d6; border-color: #3366d6; color: #fff; min-width: 90px; }
+.btn.ow-sell { background: #cf4214; border-color: #cf4214; color: #fff; min-width: 90px; }
 .ow-done summary { cursor: pointer; margin: 6px 0; }
 /* Broker tab: Portfolio / Orders / Positions / GTT orders */
 .br-tabs { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--border); margin-bottom: 6px; position: sticky; top: 0; background: var(--panel, var(--bg)); z-index: 1; }
 .br-tabs button { flex: none; white-space: nowrap; border: 0; background: transparent; color: var(--muted); padding: 9px 12px; cursor: pointer; font: inherit; font-weight: 500; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .br-tabs button:hover { color: var(--text); }
-.br-tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+.br-tabs button.on { color: var(--accent-text); border-bottom-color: var(--accent); }
 .br-tabs .n { font-size: 11px; color: var(--muted); background: var(--accent-soft); border-radius: 8px; padding: 1px 6px; margin-left: 4px; }
-.br-tabs button.on .n { color: var(--accent); }
+.br-tabs button.on .n { color: var(--accent-text); }
 .br-pane[hidden] { display: none; }
 .side[hidden] { display: none; }
 .ow-ex .btn { color: #1f2937; background: #fff; }
