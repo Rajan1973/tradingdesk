@@ -4,7 +4,7 @@ import { flow, instrumentOf, toRow, trades } from "../lib/orderflow.js";
 import { parseTrade } from "../lib/cryptoflow.js";
 import { addTrade, mergeBars, totals, imbalances, sessionDelta, divergence } from "../public/lib/footprint.js";
 import { buildProfile, sessionProfiles, niceStep, profileOptions } from "../public/lib/market-profile.js";
-import { LAYOUTS, cells } from "../public/js/layouts.js";
+import { LAYOUTS, cells, layoutById, layoutWithout } from "../public/js/layouts.js";
 
 const q = (t, p, v, bid, ask) => ({ t, p, v, b: [[bid, 1, 1]], a: [[ask, 1, 1]] });
 
@@ -173,4 +173,22 @@ test("session delta adds up only the newest bar's UTC day", () => {
   const bar = (at, buy, sell) => ({ at, cells: { 100: [buy, sell] } });
   assert.equal(sessionDelta([]), 0);
   assert.equal(sessionDelta([bar(day - 6e4, 50, 0), bar(day, 3, 1), bar(day + 6e4, 1, 4)]), -1);
+});
+
+test("closing a chart leaves a layout with one fewer, the others keeping their places", () => {
+  const less = (id, i) => layoutWithout(layoutById(id), i);
+  assert.equal(less("3c", 1).id, "2v"); // three across, middle closed: two across
+  assert.equal(less("3r", 0).id, "2h"); // three stacked, top closed: two stacked
+  assert.equal(less("2v", 0).id, "1");
+  assert.equal(less("4", 3).id, "3t"); // 2x2 less the bottom right: two on top, one wide
+  assert.equal(less("4t", 0).id, "3c"); // the wide top chart closed: the three below
+  assert.deepEqual(less("6", 2).areas, ["a b b", "c d e"]); // not in the list: kept as its own shape
+  assert.equal(layoutById(less("6", 2).id).count, 5, "an unlisted shape is saved and read back by its id");
+  for (const l of LAYOUTS)
+    for (let i = 0; l.count > 1 && i < l.count; i++) {
+      const r = layoutWithout(l, i);
+      assert.equal(r.count, l.count - 1, `${l.id} less ${i}`);
+      assert.ok(layoutById(r.id), `${l.id} less ${i} gives a usable layout`);
+    }
+  for (const bad of ["x:ab/c", "x:aa/ba", "x:ac", "x:../", "nope"]) assert.equal(layoutById(bad), null, bad);
 });

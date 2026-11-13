@@ -1,6 +1,14 @@
 import { api, download, esc, ticker, exchange, foContract } from "./api.js";
 import { ChartPane, CHART_TYPES, newUid } from "./chart.js";
-import { LAYOUTS, LAYOUT_BY_ID, applyLayout, layoutIcon } from "./layouts.js";
+import { LAYOUTS, LAYOUT_BY_ID, applyLayout, layoutIcon, layoutById, layoutWithout } from "./layouts.js";
+
+// The small toolbar on each chart when there are several: move, maximise, close (drawn icons).
+const PANE_ICON = {
+  move: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M3 12h18M12 3 9 6M12 3l3 3M12 21l-3-3M12 21l3-3M3 12l3-3M3 12l3 3M21 12l-3-3M21 12l-3 3"/></svg>',
+  max: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>',
+  restore: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></svg>',
+  close: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+};
 import { TOOLS } from "./drawings.js";
 import {
   INDICATORS,
@@ -153,8 +161,9 @@ class App {
 
   // ---------- layout ----------
   setLayout(layout, save = true) {
-    const def = LAYOUT_BY_ID[layout] || LAYOUT_BY_ID["1"];
+    const def = layoutById(layout) || LAYOUT_BY_ID["1"];
     const count = def.count;
+    if (this.maxed) this.toggleMax(null);
     this.state.layout = def.id;
     const grid = $("#grid");
     grid.dataset.count = count;
@@ -176,6 +185,7 @@ class App {
       };
       const pane = new ChartPane(this, el, base);
       this.panes.push(pane);
+      this.addPaneControls(pane);
       pane.load();
     }
     [...grid.children].forEach((el) => {
@@ -187,6 +197,96 @@ class App {
     );
     $("#layoutBtn").innerHTML = `${layoutIcon(def)}<span>${count}</span>`;
     if (save) this.persist();
+  }
+
+  // Move, maximise and close buttons on a chart (shown when there are several).
+  addPaneControls(pane) {
+    const bar = document.createElement("div");
+    bar.className = "pane-ctl";
+    bar.innerHTML =
+      `<button type="button" class="pc-move" title="Drag onto another chart to swap places (or press the arrow keys)" aria-label="Move this chart">${PANE_ICON.move}</button>` +
+      `<button type="button" class="pc-max" title="Fill the window (Esc to go back)" aria-label="Maximise this chart" aria-pressed="false">${PANE_ICON.max}</button>` +
+      `<button type="button" class="pc-close" title="Close this chart" aria-label="Close this chart">${PANE_ICON.close}</button>`;
+    pane.el.appendChild(bar);
+    const move = bar.querySelector(".pc-move");
+    bar.querySelector(".pc-max").onclick = () => this.toggleMax(pane);
+    bar.querySelector(".pc-close").onclick = () => this.closePane(pane);
+    // Keyboard: arrows swap with the previous / next chart.
+    move.onkeydown = (e) => {
+      const step = { ArrowLeft: -1, ArrowUp: -1, ArrowRight: 1, ArrowDown: 1 }[e.key];
+      if (!step) return;
+      e.preventDefault();
+      const i = this.panes.indexOf(pane), j = i + step;
+      if (j >= 0 && j < this.panes.length) this.swapPanes(i, j);
+    };
+    // Mouse / touch: drag onto another chart and let go to swap.
+    move.onpointerdown = (e) => {
+      if (e.button !== 0 || this.maxed) return;
+      e.preventDefault();
+      move.setPointerCapture(e.pointerId);
+      pane.el.classList.add("dragging");
+      let target = null;
+      const mark = (t) => {
+        if (t === target) return;
+        target?.el.classList.remove("drop-target");
+        target = t;
+        target?.el.classList.add("drop-target");
+      };
+      move.onpointermove = (ev) => {
+        const el = document.elementFromPoint(ev.clientX, ev.clientY)?.closest(".pane");
+        mark(this.panes.find((p) => p.el === el && p !== pane) || null);
+      };
+      const end = (ev) => {
+        move.onpointermove = move.onpointerup = move.onpointercancel = move.onlostpointercapture = null;
+        pane.el.classList.remove("dragging");
+        const to = ev.type === "pointerup" ? target : null;
+        mark(null);
+        if (to) this.swapPanes(this.panes.indexOf(pane), this.panes.indexOf(to));
+      };
+      move.onpointerup = move.onpointercancel = move.onlostpointercapture = end;
+    };
+  }
+
+  swapPanes(i, j) {
+    [this.panes[i], this.panes[j]] = [this.panes[j], this.panes[i]];
+    this.panes.forEach((p, k) => (p.el.style.gridArea = "abcdefghijklmnop"[k]));
+    this.persist();
+  }
+
+  // Closing a chart switches to the layout with one fewer, keeping the others where they are.
+  closePane(pane) {
+    const i = this.panes.indexOf(pane);
+    if (i < 0 || this.panes.length < 2) return;
+    const next = layoutWithout(layoutById(this.state.layout) || LAYOUT_BY_ID["1"], i);
+    if (this.maxed) this.toggleMax(null);
+    this.panes.splice(i, 1);
+    pane.destroy();
+    pane.el.remove();
+    const keep = this.active === pane ? this.panes[Math.min(i, this.panes.length - 1)] : this.active;
+    if (this.active === pane) this.active = null;
+    this.state.active = this.panes.indexOf(keep);
+    this.setLayout(next.id);
+  }
+
+  // One chart fills the window; the same button or Esc puts the layout back.
+  toggleMax(pane) {
+    const on = !!pane && this.maxed !== pane;
+    this.maxed?.el.classList.remove("max");
+    this.maxed = on ? pane : null;
+    $("#grid").classList.toggle("has-max", on);
+    if (on) {
+      pane.el.classList.add("max");
+      this.setActive(pane);
+    }
+    for (const p of this.panes) {
+      const b = p.el.querySelector(".pc-max");
+      if (!b) continue;
+      const m = p === this.maxed;
+      b.innerHTML = m ? PANE_ICON.restore : PANE_ICON.max;
+      b.setAttribute("aria-pressed", String(m));
+      b.setAttribute("aria-label", m ? "Restore the layout" : "Maximise this chart");
+      b.title = m ? "Back to the layout (Esc)" : "Fill the window (Esc to go back)";
+    }
   }
 
   toggleLayoutPicker() {
@@ -248,7 +348,7 @@ class App {
       .sort((a, b) => b[1].savedAt - a[1].savedAt)
       .map(
         ([name, t]) =>
-          `<tr><td class="l"><b>${esc(name)}</b><div class="hint-text">${esc(summary(t))}</div></td><td class="l muted">${LAYOUT_BY_ID[t.layout]?.count ?? 1}</td><td class="muted">${new Date(t.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</td><td><button class="btn small primary" data-load="${esc(name)}">Open</button> <button class="btn small" data-del="${esc(name)}" title="Delete">×</button></td></tr>`,
+          `<tr><td class="l"><b>${esc(name)}</b><div class="hint-text">${esc(summary(t))}</div></td><td class="l muted">${layoutById(t.layout)?.count ?? 1}</td><td class="muted">${new Date(t.savedAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</td><td><button class="btn small primary" data-load="${esc(name)}">Open</button> <button class="btn small" data-del="${esc(name)}" title="Delete">×</button></td></tr>`,
       )
       .join("");
     const card = this.modal(
@@ -916,6 +1016,7 @@ class App {
       if (e.key === "Escape") {
         if (!$("#modal").classList.contains("hidden")) return this.closeModal();
         if (this.tool !== "cursor") return this.setTool("cursor");
+        if (this.maxed) return this.toggleMax(null);
         if (this.active?.drawings.selected) {
           this.active.drawings.selected = null;
           this.active.drawings.update();
