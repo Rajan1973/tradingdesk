@@ -257,7 +257,7 @@ function drawPortfolio(el, app, panels, b, d) {
   const pane = (id) => `class="br-pane" data-pane="${id}" ${view.pane === id ? "" : "hidden"}`;
   box.className = "";
   box.innerHTML = `<div class="tester"><div class="left">
-    ${ticketHtml(app, b)}
+    ${floatState.on ? `<p class="hint-text ow-docked-note">The order window is floating over the app. <button type="button" class="btn small" id="owDockHere">Dock it here</button></p>` : ticketHtml(app, b)}
     <h4>Funds</h4>
     <div class="fin-stats">${
       d.funds
@@ -313,7 +313,13 @@ function drawPortfolio(el, app, panels, b, d) {
         box.querySelectorAll(".br-pane").forEach((pn) => (pn.hidden = pn.dataset.pane !== view.pane));
       }),
   );
-  bindTicket(el, app, panels, b);
+  if (floatState.on) {
+    drawFloat(el, app, panels, b);
+    box.querySelector("#owDockHere").onclick = () => setFloat(false, el, app, panels, b);
+  } else {
+    document.getElementById("owFloatHost")?.remove();
+    bindTicket(el, app, panels, b);
+  }
   drawGtts(el, app, panels, b);
   clearInterval(gttTimer);
   gttTimer = setInterval(() => {
@@ -561,14 +567,14 @@ function ticketHtml(app, b) {
     t.product = "CNC";
   }
   if (!c && !tradable(sym))
-    return `<div class="ow"><div class="ow-head buy"><b>Order window</b></div>${findBox(b)}<p class="hint-text" style="padding:10px">${a?.broker === "kotak" ? "Search above for a stock or F&amp;O contract, or open" : "Open"} an NSE stock chart (a symbol ending in .NS) to place an order or a GTT on it.</p></div>`;
+    return `<div class="ow"><div class="ow-head buy"><div class="row-flex" style="align-items:center"><b>Order window</b><span class="spacer"></span>${floatButton()}</div></div>${findBox(b)}<p class="hint-text" style="padding:10px">${a?.broker === "kotak" ? "Search above for a stock or F&amp;O contract, or open" : "Open"} an NSE stock chart (a symbol ending in .NS) to place an order or a GTT on it.</p></div>`;
   const name = c ? contractName(c) : ticker(sym).replace(/\.NS$/, "");
   const q = quotesFor[sym] || {};
   const sell = t.side === "SELL";
   const radio = (group, value, label, sub = "", disabled = false) =>
     `<label class="ow-radio ${disabled ? "off" : ""}"><input type="radio" name="${group}" value="${value}" ${t[group === "owProd" ? "product" : group === "owType" ? "type" : group === "owKind" ? "gttKind" : group] === value ? "checked" : ""} ${disabled ? "disabled" : ""}> ${label}${sub ? ` <span class="muted">${sub}</span>` : ""}</label>`;
   const head = `<div class="ow-head ${sell ? "sell" : "buy"}">
-      <div class="row-flex" style="align-items:center"><b>${esc(name)}</b><span class="spacer"></span><span class="muted" style="margin-right:6px">${sell ? "Sell" : "Buy"}</span><label class="ow-switch" title="Buy / Sell"><input type="checkbox" id="owSide" ${sell ? "checked" : ""}><span></span></label></div>
+      <div class="row-flex" style="align-items:center"><b>${esc(name)}</b><span class="spacer"></span>${floatButton()}<span class="muted" style="margin-right:6px">${sell ? "Sell" : "Buy"}</span><label class="ow-switch" title="Buy / Sell"><input type="checkbox" id="owSide" ${sell ? "checked" : ""}><span></span></label></div>
       <div class="ow-ex">${
         c
           ? `<label title="Orders go to ${SEG[c.seg]}"><input type="radio" checked> ${SEG[c.seg]} <b id="owNse">${q.nse ? `₹${fmtPrice(q.nse)}` : "…"}</b></label>${fno ? `<span>Lot ${c.lot}</span>` : ""}${fno ? `<button class="btn small" id="owOpenChart" type="button">Open chart</button>` : ""}<button class="btn small" id="owChart" type="button">Back to chart stock</button>`
@@ -623,11 +629,93 @@ function ticketHtml(app, b) {
     <div class="hint-text ow-avail">Available ${funds == null ? "—" : inr(funds)}</div></div>`;
 }
 
+// ---------- floating order window ----------
+// Popped out, the window floats over the app (drag it by its coloured header) and stays put while
+// other bottom tabs are showing. Where it is, and whether it floats, is remembered in this browser.
+const FLOAT_KEY = "qt.orderWindowFloat";
+const floatState = (() => {
+  try {
+    return JSON.parse(localStorage.getItem(FLOAT_KEY)) || { on: false };
+  } catch {
+    return { on: false };
+  }
+})();
+const saveFloat = () => {
+  try {
+    localStorage.setItem(FLOAT_KEY, JSON.stringify(floatState));
+  } catch {}
+};
+export const ticketFloating = () => floatState.on;
+const ICON_POP = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-8 8M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+const ICON_DOCK = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4zM4 15h16M12 7v5M9.5 9.5 12 12l2.5-2.5"/></svg>';
+function floatButton() {
+  const label = floatState.on ? "Dock the order window in the Broker tab" : "Pop out: move the order window anywhere";
+  return `<button type="button" class="ow-float-btn" id="owFloat" title="${label}" aria-label="${label}">${floatState.on ? ICON_DOCK : ICON_POP}</button>`;
+}
+
+// Keeps the window on screen, at least its header.
+function placeFloat(host, x, y) {
+  const w = host.offsetWidth || 360;
+  host.style.left = `${Math.round(Math.min(Math.max(0, x), Math.max(0, innerWidth - w)))}px`;
+  host.style.top = `${Math.round(Math.min(Math.max(0, y), Math.max(0, innerHeight - 48)))}px`;
+}
+addEventListener("resize", () => {
+  const host = document.getElementById("owFloatHost");
+  if (host) placeFloat(host, host.offsetLeft, host.offsetTop);
+});
+
+function drawFloat(el, app, panels, b) {
+  let host = document.getElementById("owFloatHost");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "owFloatHost";
+    host.className = "ow-float";
+    host.setAttribute("role", "dialog");
+    host.setAttribute("aria-label", "Order window");
+    document.body.appendChild(host);
+  }
+  host.innerHTML = ticketHtml(app, b);
+  placeFloat(host, floatState.x ?? innerWidth - 400, floatState.y ?? 90);
+  bindTicket(el, app, panels, b, host);
+  // Drag by the header, but not from its buttons and switches.
+  const head = host.querySelector(".ow-head");
+  head.onpointerdown = (e) => {
+    if (e.button !== 0 || e.target.closest("button, input, label, select, a")) return;
+    e.preventDefault();
+    const dx = e.clientX - host.offsetLeft, dy = e.clientY - host.offsetTop;
+    head.setPointerCapture(e.pointerId);
+    host.classList.add("moving");
+    head.onpointermove = (ev) => placeFloat(host, ev.clientX - dx, ev.clientY - dy);
+    head.onpointerup = head.onpointercancel = () => {
+      head.onpointermove = head.onpointerup = head.onpointercancel = null;
+      host.classList.remove("moving");
+      Object.assign(floatState, { x: host.offsetLeft, y: host.offsetTop });
+      saveFloat();
+    };
+  };
+}
+
+function setFloat(on, el, app, panels, b) {
+  floatState.on = on;
+  saveFloat();
+  if (!on) document.getElementById("owFloatHost")?.remove();
+  if (el.querySelector("#brData")) drawPortfolio(el, app, panels, b, view.data[b]);
+  else if (on) drawFloat(el, app, panels, b);
+  if (!on && !el.querySelector("#brData")) app.toast("The order window is docked in the Broker tab.");
+}
+
+// After an order: the Broker tab if it's showing (it opens the Orders list), otherwise only the floating window.
+function afterSend(el, app, panels, b) {
+  if (el.querySelector("#brData")) renderBroker(el.closest("#bottomBody") || el, app, panels);
+  else if (floatState.on) drawFloat(el, app, panels, b);
+}
+
 let ticketTimer = null;
-function bindTicket(el, app, panels, b) {
+function bindTicket(el, app, panels, b, root = el) {
   const t = T();
-  const q = (s) => el.querySelector(s);
-  const redraw = () => drawPortfolio(el, app, panels, b, view.data[b]);
+  const q = (s) => root.querySelector(s);
+  const redraw = () => (root === el ? drawPortfolio(el, app, panels, b, view.data[b]) : drawFloat(el, app, panels, b));
+  if (q("#owFloat")) q("#owFloat").onclick = () => setFloat(!floatState.on, el, app, panels, b);
   clearInterval(ticketTimer);
   // Search every stock and F&O contract Kotak lists.
   if (q("#owFind")) {
@@ -672,7 +760,7 @@ function bindTicket(el, app, panels, b) {
     if (q("#owQty")) t.qty = Number(q("#owQty").value);
     if (q("#owPrice") && !q("#owPrice").disabled) t.price = q("#owPrice").value === "" ? null : Number(q("#owPrice").value);
     if (q("#owTrig") && !q("#owTrig").disabled) t.trigger = q("#owTrig").value === "" ? null : Number(q("#owTrig").value);
-    el.querySelectorAll("[data-leg]").forEach((i) => {
+    root.querySelectorAll("[data-leg]").forEach((i) => {
       const L = t[i.dataset.leg];
       if (!i.disabled) L[i.dataset.f] = i.value === "" ? null : Number(i.value);
     });
@@ -734,29 +822,29 @@ function bindTicket(el, app, panels, b) {
     for (const key of ["sl", "tg"]) Object.assign(t[key], { trigger: null, price: null });
     redraw();
   };
-  el.querySelectorAll(".ow-tabs [data-tab]").forEach((x) => (x.onclick = () => (read(), (t.tab = x.dataset.tab), redraw())));
-  el.querySelectorAll('input[name="owProd"]').forEach((x) => (x.onchange = () => (read(), (t.product = x.value), required())));
-  el.querySelectorAll('input[name="owType"]').forEach((x) => (x.onchange = () => (read(), (t.type = x.value), redraw())));
-  el.querySelectorAll('input[name="owKind"]').forEach((x) => (x.onchange = () => (read(), (t.gttKind = x.value), redraw())));
+  root.querySelectorAll(".ow-tabs [data-tab]").forEach((x) => (x.onclick = () => (read(), (t.tab = x.dataset.tab), redraw())));
+  root.querySelectorAll('input[name="owProd"]').forEach((x) => (x.onchange = () => (read(), (t.product = x.value), required())));
+  root.querySelectorAll('input[name="owType"]').forEach((x) => (x.onchange = () => (read(), (t.type = x.value), redraw())));
+  root.querySelectorAll('input[name="owKind"]').forEach((x) => (x.onchange = () => (read(), (t.gttKind = x.value), redraw())));
   for (const key of ["sl", "tg"])
-    el.querySelectorAll(`input[name="ot-${key}"]`).forEach((x) => (x.onchange = () => (read(), (t[key].orderType = x.value), redraw())));
+    root.querySelectorAll(`input[name="ot-${key}"]`).forEach((x) => (x.onchange = () => (read(), (t[key].orderType = x.value), redraw())));
   if (q("#owTrail")) q("#owTrail").onchange = (e) => (read(), (t.sl.trail = e.target.checked), redraw());
   if (q("#owSlOn")) q("#owSlOn").onchange = (e) => (read(), (t.att.slOn = e.target.checked), redraw());
   if (q("#owTgOn")) q("#owTgOn").onchange = (e) => (read(), (t.att.tgOn = e.target.checked), redraw());
   // Trigger and % of LTP stay in step.
-  el.querySelectorAll("[data-leg]").forEach((i) => {
+  root.querySelectorAll("[data-leg]").forEach((i) => {
     i.oninput = () => {
       const L = t[i.dataset.leg], p = ltp();
       const v = i.value === "" ? null : Number(i.value);
       if (i.dataset.f === "pct" && p && v != null) {
         L.pct = v;
         L.trigger = Math.round(p * (1 + v / 100) * 20) / 20;
-        const trig = el.querySelector(`[data-leg="${i.dataset.leg}"][data-f="trigger"]`);
+        const trig = root.querySelector(`[data-leg="${i.dataset.leg}"][data-f="trigger"]`);
         if (trig) trig.value = L.trigger;
       } else if (i.dataset.f === "trigger" && p && v) {
         L.trigger = v;
         L.pct = Math.round(((v - p) / p) * 1000) / 10;
-        const pct = el.querySelector(`[data-leg="${i.dataset.leg}"][data-f="pct"]`);
+        const pct = root.querySelector(`[data-leg="${i.dataset.leg}"][data-f="pct"]`);
         if (pct) pct.value = L.pct;
       } else L[i.dataset.f] = v;
       required();
@@ -807,7 +895,7 @@ async function sendRegular(el, app, panels, b, sym) {
     : "";
   const ok = confirm(`REAL ORDER on ${nameOf(b)}\n\n${t.side} ${order.label}\n${priceText}\n${order.productText}, valid for today${order.warn}${attText}\n\nSend this order?`);
   if (!ok) return;
-  el.querySelector("#owSend").disabled = true;
+  document.querySelector("#owSend").disabled = true;
   try {
     const res = await fetch(`/api/broker/${encodeURIComponent(b)}/order`, {
       method: "POST",
@@ -830,7 +918,7 @@ async function sendRegular(el, app, panels, b, sym) {
   } catch (e) {
     app.toast(e.message, "err");
   }
-  renderBroker(el.closest("#bottomBody") || el, app, panels);
+  afterSend(el, app, panels, b);
 }
 
 async function sendGtt(el, app, panels, b, sym, ltp) {
@@ -853,7 +941,7 @@ async function sendGtt(el, app, panels, b, sym, ltp) {
     `GTT on ${nameOf(b)} (kept in Quant Terminal)\n\n${t.side} ${order.label}, ${order.productText}\n${legs.map(line).join("\n")}\n\nNow ₹${ltp ?? "?"}. When a trigger is hit, a REAL order is placed automatically (the app must be running and ${nameOf(b)} logged in).${order.warn}\n\nSave this GTT?`,
   );
   if (!ok) return;
-  el.querySelector("#owSend").disabled = true;
+  document.querySelector("#owSend").disabled = true;
   try {
     const res = await fetch("/api/gtt", {
       method: "POST",
@@ -868,7 +956,7 @@ async function sendGtt(el, app, panels, b, sym, ltp) {
   } catch (e) {
     app.toast(e.message, "err");
   }
-  renderBroker(el.closest("#bottomBody") || el, app, panels);
+  afterSend(el, app, panels, b);
 }
 
 // ---------- GTT list ----------
@@ -1032,5 +1120,7 @@ async function drawGtts(el, app, panels, b) {
 // The order window follows the active chart without reloading the whole portfolio.
 export function onBrokerSymbol(el, app, panels) {
   const b = view.broker;
-  if (b && view.data[b] && acctOf(b)?.connected) drawPortfolio(el, app, panels, b, view.data[b]);
+  if (!(b && view.data[b] && acctOf(b)?.connected)) return;
+  if (el.querySelector("#brData")) drawPortfolio(el, app, panels, b, view.data[b]);
+  else if (floatState.on) drawFloat(el, app, panels, b);
 }

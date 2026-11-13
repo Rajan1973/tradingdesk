@@ -12,7 +12,7 @@ import {
 import { INDICATORS, BY_ID, registerIndicator } from "../lib/indicators.js";
 import { renderNews, renderSeasonals, renderFinancials } from "./research.js";
 import { renderScanner } from "./scanner.js";
-import { renderBroker, initBroker, onBrokerSymbol, BROKER_LISTS } from "./broker.js";
+import { renderBroker, initBroker, onBrokerSymbol, BROKER_LISTS, ticketFloating } from "./broker.js";
 import { mountQuantChecks } from "./quantui.js";
 import {
   backtest,
@@ -1770,7 +1770,7 @@ export function initPanels(app) {
       if (sideTab === "news") renderNews(side, app);
       if (!bottomEl.classList.contains("collapsed") && bottomTab === "seasonals") renderSeasonals(bottom, app);
       if (!bottomEl.classList.contains("collapsed") && bottomTab === "financials") renderFinancials(bottom, app);
-      if (!bottomEl.classList.contains("collapsed") && bottomTab === "broker") onBrokerSymbol(bottom, app, P);
+      if ((!bottomEl.classList.contains("collapsed") && bottomTab === "broker") || ticketFloating()) onBrokerSymbol(bottom, app, P);
     }
     if (bottomTab === "paper" && !bottomEl.classList.contains("collapsed"))
       renderPaper();
