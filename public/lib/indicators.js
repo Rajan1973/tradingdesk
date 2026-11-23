@@ -4,6 +4,7 @@
 // Every series is a plain array the same length as the bars; missing values are NaN.
 
 import { keyLevels } from "./keylevels.js";
+import { simpleVolume } from "./simplevolume.js";
 
 const N = NaN;
 const isNum = (v) => typeof v === "number" && !Number.isNaN(v);
@@ -2253,6 +2254,44 @@ export const INDICATORS = [
         ma: p.maLength > 0 ? sma(v, p.maLength) : v.map(() => N),
       };
     },
+  },
+  {
+    id: "simplevolume",
+    name: "Simple Volume",
+    volumeFormat: true,
+    group: "Volume",
+    overlay: false,
+    inputs: [
+      { key: "ppvLength", label: "Pocket pivot lookback", type: "select", options: ["5", "10", "20"], default: "10", section: "User inputs", tip: "Blue: an up day whose volume beats the highest down-day volume of this many days. A sign of institutional buying." },
+      { key: "maLength", label: "Volume average lookback", type: "int", default: 34, min: 1, tip: "Above this average: green (up day) or red (down day). Below it: dark grey." },
+      { key: "rvolLength", label: "Relative volume lookback", type: "int", default: 20, min: 1, legend: false, tip: "RVol: today's volume against the average of this many days before it." },
+      { key: "udLength", label: "Up down volume lookback", type: "int", default: 17, min: 2, legend: false, tip: "U/D Vol: volume on up days divided by volume on down days over this many days. Above 1 is bullish." },
+      { key: "snortLength", label: "Bull Snort volume average lookback", type: "int", default: 50, min: 1, legend: false },
+      { key: "turnoverLength", label: "Turnover calculation method", type: "select", options: ["10 period", "20 period", "50 period"], default: "50 period", legend: false, tip: "Avg₹Vol: average traded value over this many days before today." },
+      { key: "turnoverType", label: "Turnover calculation type", type: "select", options: ["VWAP", "SMA"], default: "VWAP", legend: false, tip: "VWAP: volume × the day's typical price. SMA: volume × close." },
+      { key: "prevClose", label: "Color based on previous close", type: "bool", default: false, section: "Display options", tip: "Off: up and down days compare the close with the open. On: with the previous close." },
+      { key: "dry", label: "Display dry volumes", type: "bool", default: true, tip: "Orange: volume below 1/N of the average." },
+      { key: "dryDivisor", label: "Dry volumes lesser than 1/", type: "select", options: ["2", "3", "4", "5", "6", "8", "10"], default: "5", legend: false },
+      { key: "power", label: "Display power volumes", type: "bool", default: false, tip: "Square under the bar: at least the volume below and a move of at least 5%." },
+      { key: "powerVolume", label: "Power volumes greater than", type: "int", default: 500000, legend: false },
+      { key: "powerPct", label: "Power volume minimum move %", type: "float", default: 5, legend: false },
+      { key: "powerDown", label: "Show power volumes for down days", type: "bool", default: true },
+      { key: "bullSnort", label: "Display Bull Snort", type: "bool", default: false, tip: "Purple dot (Oliver Kell): volume at least 3× its average, above the previous close, closing in the top 35% of the day's range." },
+      { key: "snortMult", label: "Bull Snort volume (× average)", type: "float", default: 3, legend: false },
+      { key: "snortRange", label: "Bull Snort close within top % of range", type: "float", default: 35, legend: false },
+      { key: "hvLabels", label: "Highest / lowest volume labels", type: "select", options: ["Latest only", "All", "Off"], default: "Latest only", legend: false, tip: "HVE: highest volume ever (in the chart's history), HVY: in a year (252 days), HVQ: in a quarter (63 days). Y / Q: lowest in a year / quarter. Daily and higher charts." },
+      { key: "showValue", label: "Show volume on labels", type: "bool", default: true },
+      { key: "showPct", label: "Show % of average on labels", type: "bool", default: false },
+      { key: "lowLabels", label: "Show lowest volume (Y, Q)", type: "bool", default: true },
+      { key: "table", label: "Table", type: "select", options: ["Top right", "Top left", "Off"], default: "Top right", section: "Table", legend: false },
+      { key: "showRvol", label: "Show RVol in table", type: "bool", default: true },
+      { key: "rvolStyle", label: "RVol style", type: "select", options: ["Percent", "Multiplier"], default: "Percent", legend: false, tip: "150% or 1.5x." },
+      { key: "projection", label: "Show projected RVol", type: "bool", default: false, tip: "While the market is open, today's volume projected to the close at its pace so far (09:15-15:30 IST)." },
+      { key: "turnoverUnit", label: "Turnover unit", type: "select", options: ["Crores", "Millions"], default: "Crores", legend: false },
+      { key: "turnoverThreshold", label: "Turnover background color threshold", type: "float", default: 5, legend: false, tip: "Avg₹Vol is green at or above this (in the unit above), red below. 0: no colour." },
+    ],
+    outputs: [hist("value", "Volume", "#434651")],
+    calc: (bars, p) => simpleVolume(bars, p),
   },
   {
     id: "obv",

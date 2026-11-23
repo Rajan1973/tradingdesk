@@ -641,6 +641,7 @@ const REF = {
   }),
   pivotshl: null, // markers, checked in the pivot high/low test below
   keylevels: null, // zones drawn by the chart, checked in test/keylevels.test.js
+  simplevolume: null, // coloured volume and labels, checked in test/simplevolume.test.js
   rvgi: () => {
     const sw = (s) =>
       s.map((_, i) =>

@@ -15,6 +15,7 @@ import { DrawingLayer, TOOL_BY_ID } from "./drawings.js";
 import { VolumeProfile, SessionVolumeProfile } from "./volume-profile.js";
 import { MarketProfileLayer } from "./market-profile-draw.js";
 import { KeyLevelsLayer } from "./keylevels-layer.js";
+import { PaneTable } from "./pane-table.js";
 import { CatalystLayer, PivotLayer, EarningsLayer } from "./catalyst-layer.js";
 import { markerType } from "../lib/marker-types.js";
 
@@ -861,6 +862,10 @@ export class ChartPane {
         s.setData(out.kind === "histogram" ? histData(vals, res.colors, timeAt, n) : lineData(vals, res.breaks, timeAt, n));
         list.push(s);
       }
+      // Labels on the indicator's own bars (Simple Volume's HVE / HVQ, Bull Snort...).
+      if (res.paneMarkers?.length && list[0] && !ind.tf)
+        LW.createSeriesMarkers(list[0], res.paneMarkers.map(({ time, position, shape, color, text, size }) => ({ time: this.toChart(time), position, shape, color, text, ...(size != null ? { size } : {}) })));
+      if (res.table?.length && list[0]) list[0].attachPrimitive(new PaneTable(this, res.table, res.tablePos));
       if (parentPane === undefined)
         for (const lv of def.levels || [])
           list[0].createPriceLine({ price: lv, color: css("--muted"), lineWidth: 1, lineStyle: LW.LineStyle.Dashed, axisLabelVisible: false });
