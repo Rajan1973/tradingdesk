@@ -14,6 +14,7 @@ import {
 import { DrawingLayer, TOOL_BY_ID } from "./drawings.js";
 import { VolumeProfile, SessionVolumeProfile } from "./volume-profile.js";
 import { MarketProfileLayer } from "./market-profile-draw.js";
+import { KeyLevelsLayer } from "./keylevels-layer.js";
 import { CatalystLayer, PivotLayer, EarningsLayer } from "./catalyst-layer.js";
 import { markerType } from "../lib/marker-types.js";
 
@@ -818,6 +819,11 @@ export class ChartPane {
         this.main.attachPrimitive(vp);
         this.vpPrims.push(vp);
       }
+      if (res.keyLevels) {
+        const kl = new KeyLevelsLayer(this, res.keyLevels);
+        this.main.attachPrimitive(kl);
+        this.vpPrims.push(kl);
+      }
       if (res.marketProfile) {
         const mp = new MarketProfileLayer(this, res.marketProfile);
         this.main.attachPrimitive(mp);
@@ -1015,7 +1021,7 @@ export class ChartPane {
     const def = BY_ID[ind.id];
     if (!def) return "";
     const nums = (def.inputs || [])
-      .filter((x) => x.type !== "source" && x.type !== "color")
+      .filter((x) => x.type !== "source" && x.type !== "color" && x.type !== "bool" && x.legend !== false)
       .map((x) => {
         const v = ind.params?.[x.key] ?? x.default;
         if (x.type !== "time") return v;

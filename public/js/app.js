@@ -818,9 +818,15 @@ class App {
 
   openIndicatorSettings(pane, ind) {
     const def = BY_ID[ind.id];
+    // A section heading before an input that starts one; a hover tip (the ⓘ) where the input has one.
+    const tipOf = (i) => (i.tip ? ` <span class="ind-tip" title="${esc(i.tip)}" aria-label="${esc(i.tip)}">ⓘ</span>` : "");
     const fields = (def.inputs || [])
-      .map((i) => {
+      .map((i) => `${i.section ? `<h4 class="ind-sec">${esc(i.section)}</h4>` : ""}${field(i)}`)
+      .join("");
+    function field(i) {
         const v = ind.params?.[i.key] ?? i.default;
+        if (i.type === "bool")
+          return `<label class="field ind-check"><span><input data-k="${i.key}" data-type="bool" type="checkbox" ${v ? "checked" : ""}> ${esc(i.label)}${tipOf(i)}</span></label>`;
         if (i.type === "source") {
           // Indicators on indicators: any output of another indicator on this chart can be the source.
           const others = pane.cfg.indicators
@@ -831,15 +837,14 @@ class App {
           return `<label class="field">${esc(i.label)}<select data-k="${i.key}"><optgroup label="Price">${price}</optgroup>${inds ? `<optgroup label="Another indicator">${inds}</optgroup>` : ""}</select></label>`;
         }
         if (i.type === "select")
-          return `<label class="field">${esc(i.label)}<select data-k="${i.key}">${i.options.map((s) => `<option ${s === v ? "selected" : ""}>${s}</option>`).join("")}</select></label>`;
+          return `<label class="field">${esc(i.label)}${tipOf(i)}<select data-k="${i.key}">${i.options.map((s) => `<option ${s === v ? "selected" : ""}>${s}</option>`).join("")}</select></label>`;
         if (i.type === "color") return `<label class="field">${esc(i.label)}<input data-k="${i.key}" type="color" value="${esc(v)}"></label>`;
         if (i.type === "time") {
           const local = v ? new Date((v - new Date(v * 1000).getTimezoneOffset() * 60) * 1000).toISOString().slice(0, 16) : "";
           return `<label class="field">${esc(i.label)}<input data-k="${i.key}" data-type="time" type="datetime-local" value="${local}"><button class="btn small" type="button" data-pick="${i.key}">Pick on chart</button></label>`;
         }
-        return `<label class="field">${esc(i.label)}<input data-k="${i.key}" data-type="${i.type}" type="number" step="${i.type === "int" ? 1 : "any"}" value="${v}"></label>`;
-      })
-      .join("");
+        return `<label class="field">${esc(i.label)}${tipOf(i)}<input data-k="${i.key}" data-type="${i.type}" type="number" step="${i.type === "int" ? 1 : "any"}" value="${v}"></label>`;
+    }
     const colors = def.outputs
       .map(
         (o) =>
@@ -857,7 +862,9 @@ class App {
       ind.params = {};
       card.querySelectorAll("[data-k]").forEach((el) => {
         ind.params[el.dataset.k] =
-          el.dataset.type === "time"
+          el.dataset.type === "bool"
+            ? el.checked
+            : el.dataset.type === "time"
             ? el.value
               ? Math.floor(new Date(el.value).getTime() / 1000)
               : 0

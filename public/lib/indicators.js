@@ -3,6 +3,8 @@
 // TradingView's built-ins: RMA-based RSI/ATR/ADX, SMA-seeded EMA, population stdev.
 // Every series is a plain array the same length as the bars; missing values are NaN.
 
+import { keyLevels } from "./keylevels.js";
+
 const N = NaN;
 const isNum = (v) => typeof v === "number" && !Number.isNaN(v);
 
@@ -2133,6 +2135,44 @@ export const INDICATORS = [
       });
       return { high, low, breaks };
     },
+  },
+  {
+    id: "keylevels",
+    name: "Key Levels (S/R zones)",
+    group: "Trend",
+    overlay: true,
+    inputs: [
+      { key: "left", label: "Look left", type: "int", default: 20, min: 1, section: "Zones", tip: "Bars to the left a swing high/low must beat to form a pivot. Higher finds bigger swings." },
+      { key: "right", label: "Look right", type: "int", default: 15, min: 1, tip: "Bars to the right a swing high/low must hold for. A zone appears this many bars after its pivot." },
+      { key: "nPiv", label: "Number of pivots", type: "int", default: 4, min: 1, legend: false, tip: "How many recent pivot highs and lows keep growing as live zones (each side)." },
+      { key: "atrLen", label: "ATR length", type: "int", default: 30, min: 1, legend: false, tip: "Bars in the ATR that sets zone width, so width fits each stock and timeframe." },
+      { key: "mult", label: "Zone width (ATR)", type: "float", default: 0.5, legend: false, tip: "Zone height as a multiple of ATR, from bottom to top." },
+      { key: "maxPct", label: "Max zone percent", type: "float", default: 5, legend: false, tip: "Caps zone height at this % of price, for very volatile low-priced stocks." },
+      { key: "offset", label: "Offset for labels", type: "int", default: 30, min: 0, legend: false, tip: "Bars to the right of the last bar where the price labels sit." },
+      { key: "pivotSource", label: "Source for pivots", type: "select", options: ["HA", "High/Low Body", "High/Low"], default: "HA", legend: false, tip: "HA uses the highest and lowest Heikin Ashi bodies (smoother levels); High/Low Body uses real candle bodies; High/Low uses wicks." },
+      { key: "align", label: "Align zones", type: "bool", default: true, tip: "A new zone overlapping an existing one takes its edges, so recurring levels line up and look stronger." },
+      { key: "extend", label: "Extend right", type: "bool", default: false, tip: "Live zones reach the right edge of the chart." },
+      { key: "showLabels", label: "Show level labels", type: "bool", default: true, tip: "Price labels for the live zones, to the right of the last bar." },
+      { key: "highs", label: "Detect pivot highs", type: "bool", default: true, section: "Detection", tip: "Off: no resistance zones from swing highs." },
+      { key: "lows", label: "Detect pivot lows", type: "bool", default: true, tip: "Off: no support zones from swing lows." },
+      { key: "supColor", label: "Support", type: "color", default: "#64b5f6", section: "Colours" },
+      { key: "resColor", label: "Resistance", type: "color", default: "#ff9800" },
+      { key: "borderOpacity", label: "Border opacity %", type: "int", default: 40, min: 0, legend: false },
+      { key: "fillOpacity", label: "Fill opacity %", type: "int", default: 12, min: 0, legend: false },
+    ],
+    outputs: [],
+    calc: (bars, p) => ({
+      keyLevels: {
+        ...keyLevels(bars, p),
+        supColor: p.supColor,
+        resColor: p.resColor,
+        borderOpacity: p.borderOpacity,
+        fillOpacity: p.fillOpacity,
+        extend: !!p.extend,
+        offset: p.offset,
+        showLabels: p.showLabels !== false,
+      },
+    }),
   },
   {
     id: "pivotshl",

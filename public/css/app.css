@@ -1241,3 +1241,7 @@ table.t.heat td { text-align: center; } table.t.heat td.base { outline: 2px soli
 
 /* Scanner panel */
 .pill { display: inline-block; padding: 1px 7px; border-radius: 10px; font-size: 11px; background: var(--panel-2); border: 1px solid var(--border); white-space: nowrap; }
+/* Indicator settings: section headings, tick boxes and hover tips (Key Levels and others). */
+.form-grid .ind-sec { grid-column: 1 / -1; margin: 10px 0 0; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+.form-grid .ind-check span { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
+.ind-tip { cursor: help; color: var(--accent-text); font-size: 12px; }
