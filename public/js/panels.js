@@ -353,6 +353,10 @@ export function initPanels(app) {
   function wlSymbols() {
     return app.state.watchlists[app.state.activeWatchlist] || [];
   }
+  // A section heading is kept in the list itself, as "§NAME", so it moves with its stocks.
+  const SEC = "§";
+  const isSec = (s) => s.startsWith(SEC);
+  let dragFrom = null;
   // Each broker account's holdings are their own watchlist ("Zerodha", "Kotak Neo"...), kept in
   // step with the account, so they can't be edited here: no adding, removing or deleting.
   const isBrokerList = (n) => BROKER_LISTS.includes(n);
@@ -371,7 +375,7 @@ export function initPanels(app) {
       brokers.length
         ? `<optgroup label="Broker portfolios">${brokers.map((n) => opt(n, `${n} portfolio (${app.state.watchlists[n].length})`)).join("")}</optgroup>`
         : ""
-    }</select><button class="btn small" id="wlNew" title="New list">+ List</button><button class="btn small" id="wlDel" title="${readOnly ? "Broker portfolios follow your holdings" : "Delete this list"}" ${readOnly ? "disabled" : ""}>Delete</button></div>
+    }</select><button class="btn small" id="wlNew" title="New list">+ List</button>${readOnly ? "" : '<button class="btn small" id="wlSec" title="Add a section heading to group stocks">+ Section</button>'}<button class="btn small" id="wlDel" title="${readOnly ? "Broker portfolios follow your holdings" : "Delete this list"}" ${readOnly ? "disabled" : ""}>Delete</button></div>
       ${
         readOnly
           ? `<div class="pad hint-text" style="padding:6px 10px">Your ${esc(active)} holdings, updated from the account each time it loads.</div>`
@@ -392,6 +396,16 @@ export function initPanels(app) {
       app.persist();
       renderWatchlist();
     };
+    if ($("#wlSec"))
+      $("#wlSec").onclick = () => {
+        const n = prompt("Section name (for example STOCKS or BANKS):", "")?.trim().toUpperCase();
+        if (!n) return;
+        if (wlSymbols().includes(SEC + n)) return app.toast(`There's already a ${n} section.`, "err");
+        app.state.watchlists[active] = [...wlSymbols(), SEC + n];
+        app.persist();
+        drawRows();
+        app.toast(`Section ${n} added at the bottom. Drag stocks under it.`);
+      };
     $("#wlDel").onclick = () => {
       if (readOnly) return;
       if (mine.length < 2) return app.toast("Keep at least one list.");
@@ -422,6 +436,35 @@ export function initPanels(app) {
       };
     }
     $("#wlRows").onclick = (e) => {
+      const sort = e.target.closest("[data-sort]");
+      if (sort) {
+        // Name: A-Z, Z-A, off. Change: biggest gain first, biggest fall first, off.
+        const key = sort.dataset.sort, cur = app.state.wlSort;
+        const first = key === "name" ? 1 : -1;
+        app.state.wlSort = cur?.key !== key ? { key, dir: first } : cur.dir === first ? { key, dir: -first } : null;
+        app.persist();
+        return drawRows();
+      }
+      const sec = e.target.closest(".wl-sec");
+      if (sec) {
+        const name = sec.dataset.sec;
+        const list = wlSymbols();
+        if (e.target.closest(".x") && !readOnly) {
+          app.state.watchlists[active] = list.filter((s) => s !== SEC + name);
+        } else if (e.target.closest(".ren") && !readOnly) {
+          const n = prompt("Rename the section:", name)?.trim().toUpperCase();
+          if (!n || n === name) return;
+          if (list.includes(SEC + n)) return app.toast(`There's already a ${n} section.`, "err");
+          app.state.watchlists[active] = list.map((s) => (s === SEC + name ? SEC + n : s));
+        } else {
+          const fold = (app.state.wlFold ||= {});
+          const mine = new Set(fold[active] || []);
+          mine.has(name) ? mine.delete(name) : mine.add(name);
+          fold[active] = [...mine];
+        }
+        app.persist();
+        return drawRows();
+      }
       const row = e.target.closest(".wl-row");
       if (!row) return;
       if (e.target.closest(".x") && !readOnly) {
@@ -431,24 +474,102 @@ export function initPanels(app) {
       }
       app.setSymbol(row.dataset.sym);
     };
+    bindDrag();
     drawRows();
   }
+
+  // Drag a stock, or a section with its stocks, to a new place (not while sorted: the order you see isn't the saved one).
+  function bindDrag() {
+    const box = $("#wlRows");
+    const clear = () => box.querySelectorAll(".drop-before, .drop-after").forEach((x) => x.classList.remove("drop-before", "drop-after"));
+    const blockOf = (list, i) => {
+      if (!isSec(list[i])) return [i, 1];
+      let n = 1;
+      while (i + n < list.length && !isSec(list[i + n])) n++;
+      return [i, n];
+    };
+    box.ondragstart = (e) => {
+      const el = e.target.closest("[data-i]");
+      if (!el) return;
+      dragFrom = Number(el.dataset.i);
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", el.dataset.sym || el.dataset.sec || "");
+      el.classList.add("dragging");
+    };
+    box.ondragover = (e) => {
+      const el = e.target.closest("[data-i]");
+      if (dragFrom == null || !el) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      clear();
+      el.classList.add(e.clientY < r.top + r.height / 2 ? "drop-before" : "drop-after");
+    };
+    box.ondragleave = (e) => !box.contains(e.relatedTarget) && clear();
+    box.ondragend = () => {
+      dragFrom = null;
+      clear();
+      box.querySelector(".dragging")?.classList.remove("dragging");
+    };
+    box.ondrop = (e) => {
+      const el = e.target.closest("[data-i]");
+      if (dragFrom == null || !el) return;
+      e.preventDefault();
+      const list = [...wlSymbols()];
+      const [from, n] = blockOf(list, dragFrom);
+      let to = Number(el.dataset.i) + (el.classList.contains("drop-after") ? 1 : 0);
+      dragFrom = null;
+      clear();
+      if (to >= from && to <= from + n) return drawRows(); // dropped onto itself
+      const moving = list.splice(from, n);
+      if (to > from) to -= n;
+      list.splice(to, 0, ...moving);
+      app.state.watchlists[app.state.activeWatchlist] = list;
+      app.persist();
+      drawRows();
+    };
+  }
+
   function drawRows() {
     const box = $("#wlRows");
-    if (!box) return;
+    if (!box || dragFrom != null) return; // a 5-second refresh mustn't redraw under a drag
     const cur = app.active?.cfg.symbol;
-    const removable = !isBrokerList(app.state.activeWatchlist);
-    box.innerHTML =
-      wlSymbols()
-        .map((s) => {
-          const q = quotes[s] || {};
-          const live = app.prices[s] ?? q.price;
-          return `<div class="wl-row ${s === cur ? "current" : ""}" data-sym="${esc(s)}"><span class="sym">${esc(ticker(s))} <span class="ex">${esc(exchange(s))}</span></span><span class="px">${fmtPrice(live)}</span><span class="chg ${q.changePct >= 0 ? "up" : "down"}">${fmtPct(q.changePct)}</span>${removable ? '<button class="x" title="Remove"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button>' : ""}</div>`;
-        })
-        .join("") || `<div class="pad hint-text">${removable ? "Empty list. Add a symbol above." : "No holdings yet."}</div>`;
+    const list = app.state.activeWatchlist;
+    const removable = !isBrokerList(list);
+    const sort = app.state.wlSort;
+    const movable = removable && !sort;
+    const folded = new Set(app.state.wlFold?.[list] || []);
+    const X = '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    // Sections, each with its stocks; stocks above the first heading form an unnamed one.
+    const groups = [{ name: null, items: [] }];
+    wlSymbols().forEach((s, i) => (isSec(s) ? groups.push({ name: s.slice(1), i, items: [] }) : groups.at(-1).items.push({ s, i })));
+    // Stocks with no price yet stay at the bottom whichever way the change is sorted.
+    const order = (items) => {
+      if (!sort) return items;
+      if (sort.key === "name") return [...items].sort((a, b) => sort.dir * ticker(a.s).localeCompare(ticker(b.s)));
+      const has = (x) => Number.isFinite(quotes[x.s]?.changePct);
+      return [...items.filter(has).sort((a, b) => sort.dir * (quotes[a.s].changePct - quotes[b.s].changePct)), ...items.filter((x) => !has(x))];
+    };
+    const row = ({ s, i }) => {
+      const q = quotes[s] || {};
+      const live = app.prices[s] ?? q.price;
+      return `<div class="wl-row ${s === cur ? "current" : ""}" data-sym="${esc(s)}" data-i="${i}" ${movable ? 'draggable="true"' : ""}><span class="sym">${esc(ticker(s))} <span class="ex">${esc(exchange(s))}</span></span><span class="px">${fmtPrice(live)}</span><span class="chg ${q.changePct >= 0 ? "up" : "down"}">${fmtPct(q.changePct)}</span>${removable ? `<button class="x" title="Remove">${X}</button>` : ""}</div>`;
+    };
+    const arrow = (key) => (sort?.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : "");
+    const head = `<div class="wl-cols"><button type="button" data-sort="name" aria-label="Sort by name">Symbol${arrow("name")}</button><span>Last</span><button type="button" data-sort="chg" aria-label="Sort by % change">Chg%${arrow("chg")}</button></div>`;
+    const body = groups
+      .map((g) => {
+        const rows = order(g.items).map(row).join("");
+        if (g.name == null) return rows;
+        const open = !folded.has(g.name);
+        return `<div class="wl-sec" data-sec="${esc(g.name)}" data-i="${g.i}" ${movable ? 'draggable="true"' : ""}><button type="button" class="fold" aria-expanded="${open}" aria-label="${open ? "Fold" : "Unfold"} ${esc(g.name)}"><svg viewBox="0 0 24 24"><path d="${open ? "M6 9l6 6 6-6" : "M9 6l6 6-6 6"}"/></svg></button><span class="name">${esc(g.name)}</span><span class="n">${g.items.length}</span>${removable ? `<button type="button" class="ren" title="Rename section" aria-label="Rename ${esc(g.name)}"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16zM14 6l4 4"/></svg></button><button type="button" class="x" title="Remove the heading (its stocks stay)" aria-label="Remove section ${esc(g.name)}">${X}</button>` : ""}</div>${open ? rows : ""}`;
+      })
+      .join("");
+    box.innerHTML = wlSymbols().length
+      ? head + body + (sort && removable ? '<div class="pad hint-text wl-sorthint">Sorted view: click the column again to turn sorting off and drag to rearrange.</div>' : "")
+      : `<div class="pad hint-text">${removable ? "Empty list. Add a symbol above." : "No holdings yet."}</div>`;
   }
   async function refreshQuotes() {
-    const syms = [...new Set([...wlSymbols(), ...paperSymbols()])].slice(0, 200);
+    const syms = [...new Set([...wlSymbols().filter((s) => !isSec(s)), ...paperSymbols()])].slice(0, 200);
     if (!syms.length) return;
     try {
       const q = await api.quotes(syms);

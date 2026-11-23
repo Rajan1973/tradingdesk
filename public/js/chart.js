@@ -174,6 +174,8 @@ function mapToChart(res, hb, htf, cb, ctf) {
   return out;
 }
 
+const MAGNET_PX = 30;
+
 export class ChartPane {
   constructor(app, el, cfg) {
     this.app = app;
@@ -1033,7 +1035,7 @@ export class ChartPane {
   // ---------- legend ----------
   onCrosshair(p) {
     if (this.app.tool !== "cursor" && this.drawings.temp && p.point) {
-      const pt = this.pointAt(p);
+      const pt = this.pointAt(p, true);
       if (pt) {
         this.drawings.temp.points[this.drawings.temp.points.length - 1] = pt;
         this.drawings.update();
@@ -1150,14 +1152,27 @@ export class ChartPane {
   }
 
   // ---------- drawing tools ----------
-  pointAt(p) {
+  pointAt(p, snap = false) {
     if (p.paneIndex) return null; // drawings live on the price pane only
     if (!p.point || p.logical == null) return null;
     const logical =
       this.chart.timeScale().coordinateToLogical(p.point.x) ?? p.logical;
     const price = this.main.coordinateToPrice(p.point.y);
     const time = this.timeOfLogical(logical);
-    return price == null || time == null ? null : { time, price };
+    if (price == null || time == null) return null;
+    return (snap && this.app.magnetOn() && this.snapToBar(logical, price, p.point.y)) || { time, price };
+  }
+
+  // Magnet: the nearest open, high, low or close of the candle under the mouse, when it's within
+  // MAGNET_PX of the pointer; further away the point stays where you put it.
+  snapToBar(logical, price, y) {
+    const i = Math.round(logical);
+    const b = this.shown[i];
+    if (!b) return null;
+    const best = [b.open, b.high, b.low, b.close].reduce((a, v) => (Math.abs(v - price) < Math.abs(a - price) ? v : a));
+    const by = this.main.priceToCoordinate(best);
+    if (by == null || Math.abs(by - y) > MAGNET_PX) return null;
+    return { time: this.timeOfLogical(i), price: best };
   }
 
   onClick(p) {
@@ -1195,7 +1210,7 @@ export class ChartPane {
       return;
     }
     const def = TOOL_BY_ID[tool];
-    const pt = this.pointAt(p);
+    const pt = this.pointAt(p, true);
     if (!def || !pt) return;
     const d = this.drawings;
     if (!d.temp) {
