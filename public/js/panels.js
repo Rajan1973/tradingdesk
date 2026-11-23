@@ -58,6 +58,81 @@ const outputsOf = (def) => [
 const mainInput = (def) =>
   (def.inputs || []).find((i) => i.type === "int" || i.type === "float");
 
+// Search-as-you-type under a symbol box: the same search as the chart's symbol box (India or all
+// markets, whichever you last chose there). Click a result, or arrow keys and Enter, to pick it.
+function symbolSuggest(input, onPick) {
+  const box = document.createElement("div");
+  box.className = "list sym-suggest";
+  box.setAttribute("role", "listbox");
+  box.hidden = true;
+  input.parentElement.classList.add("sym-host");
+  input.after(box);
+  input.setAttribute("autocomplete", "off");
+  let results = [], sel = 0, timer = null, seq = 0;
+  const india = () => {
+    try {
+      return localStorage.getItem("qt.symMarket") !== "all";
+    } catch {
+      return true;
+    }
+  };
+  const draw = () => {
+    box.hidden = !results.length;
+    box.innerHTML = results
+      .map((r, i) => `<div class="item ${i === sel ? "sel" : ""}" role="option" aria-selected="${i === sel}" data-i="${i}"><span><b>${esc(ticker(r.symbol))}</b> <span class="muted">${esc(r.name || "")}</span></span><span class="meta">${esc(r.exchange || "")}</span></div>`)
+      .join("");
+  };
+  const close = () => {
+    results = [];
+    draw();
+  };
+  const choose = (r) => {
+    close();
+    onPick(r.symbol);
+  };
+  input.addEventListener("input", () => {
+    clearTimeout(timer);
+    const v = input.value.trim();
+    if (v.length < 2) return close();
+    timer = setTimeout(async () => {
+      const mine = ++seq;
+      let list = await api.search(v, india() ? "india" : "all").catch(() => []);
+      if (india()) list = list.filter((r) => /\.(NS|BO)$/i.test(r.symbol) || /^[NB]FO:/.test(r.symbol));
+      if (mine !== seq || input.value.trim() !== v) return;
+      results = list.slice(0, 8);
+      sel = 0;
+      draw();
+    }, 180);
+  });
+  // Capture, so a picked result wins over the box's own Enter (add the typed code as it is).
+  input.addEventListener(
+    "keydown",
+    (e) => {
+      if (box.hidden) return;
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        sel = (sel + (e.key === "ArrowDown" ? 1 : -1) + results.length) % results.length;
+        draw();
+        e.preventDefault();
+      } else if (e.key === "Enter") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        choose(results[sel]);
+      } else if (e.key === "Escape") {
+        e.stopPropagation();
+        close();
+      }
+    },
+    true,
+  );
+  box.addEventListener("mousedown", (e) => {
+    const it = e.target.closest("[data-i]");
+    if (!it) return;
+    e.preventDefault();
+    choose(results[Number(it.dataset.i)]);
+  });
+  input.addEventListener("blur", () => setTimeout(close, 150));
+}
+
 function operandHtml(o) {
   const val =
     o.kind === "line"
@@ -326,21 +401,26 @@ export function initPanels(app) {
       app.persist();
       renderWatchlist();
     };
-    if ($("#wlAdd"))
-      $("#wlAdd").onkeydown = async (e) => {
-        if (e.key !== "Enter" || !e.target.value.trim()) return;
-        try {
-          const r = await api.get(`/api/resolve?symbol=${encodeURIComponent(e.target.value.trim())}`);
-          const list = wlSymbols();
-          if (!list.includes(r.id)) list.push(r.id);
-          e.target.value = "";
-          app.persist();
-          drawRows();
-          refreshQuotes();
-        } catch (err) {
-          app.toast(err.message, "err");
-        }
+    const addToList = async (text) => {
+      try {
+        const r = await api.get(`/api/resolve?symbol=${encodeURIComponent(text)}`);
+        const list = wlSymbols();
+        if (!list.includes(r.id)) list.push(r.id);
+        $("#wlAdd").value = "";
+        app.persist();
+        drawRows();
+        refreshQuotes();
+      } catch (err) {
+        app.toast(err.message, "err");
+      }
+    };
+    if ($("#wlAdd")) {
+      $("#wlAdd").placeholder = "Search to add: name or code";
+      symbolSuggest($("#wlAdd"), addToList);
+      $("#wlAdd").onkeydown = (e) => {
+        if (e.key === "Enter" && e.target.value.trim()) addToList(e.target.value.trim());
       };
+    }
     $("#wlRows").onclick = (e) => {
       const row = e.target.closest(".wl-row");
       if (!row) return;
@@ -472,6 +552,7 @@ export function initPanels(app) {
       },
     );
     bindRules(card.querySelector("#aRule"));
+    symbolSuggest(card.querySelector("#aSym"), (sym) => (card.querySelector("#aSym").value = sym));
     card.querySelector("#aAdd").onclick = () => {
       const box = card.querySelector("#aRule");
       if (box.querySelectorAll(".rule").length >= 5) return app.toast("An alert can have up to 5 conditions.");

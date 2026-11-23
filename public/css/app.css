@@ -977,6 +977,10 @@ h4 {
 .list .item.sel {
   background: var(--hover);
 }
+/* Search results under a symbol box (watchlist add, alert symbol). */
+.sym-host { position: relative; }
+.list.sym-suggest { position: absolute; left: 0; right: 0; top: 100%; z-index: 50; margin-top: 2px; padding: 4px; max-height: 300px; overflow: auto; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); }
+.list.sym-suggest .item { padding: 6px 8px; }
 .list .item .meta {
   color: var(--muted);
   font-size: 12px;
