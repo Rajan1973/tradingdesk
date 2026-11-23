@@ -11,8 +11,17 @@ const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const first = Number(process.env.PORT) || 3777;
 const same = (a, b) => !!a && path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase();
 
+// The port a copy last started on (it moves when Windows has reserved the usual one), then the usual range.
+function portsToTry() {
+  let saved = null;
+  try {
+    saved = JSON.parse(fs.readFileSync(path.join(root, 'data', 'server-port.json'), 'utf8')).port;
+  } catch { /* first start */ }
+  return [...new Set([saved, ...Array.from({ length: 21 }, (_, i) => first + i)].filter((p) => Number.isInteger(p)))];
+}
+
 async function running() {
-  for (let p = first; p < first + 21; p++) {
+  for (const p of portsToTry()) {
     try {
       const r = await fetch(`http://127.0.0.1:${p}/api/health`, { signal: AbortSignal.timeout(700) });
       const j = await r.json();
@@ -42,6 +51,7 @@ if (!port) {
   }
 }
 const url = `http://localhost:${port}`;
+if (port !== first) console.log(`Note: port ${first} was busy or reserved by Windows, so Quant Terminal is on ${port}. Zerodha and ICICI logins need ${first}: see "Port reserved by Windows" in the manual.`);
 if (!process.argv.includes('--no-open') && process.env.QT_NO_OPEN !== '1') openBrowser(url);
 console.log(`Quant Terminal is running at ${url}\nStop it any time with: node scripts/stop.js`);
 process.exit(0);

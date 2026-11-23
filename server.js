@@ -932,8 +932,10 @@ export function start(port = START_PORT, tries = 20) {
       });
     });
     server.once("error", (e) => {
-      if (e.code === "EADDRINUSE" && tries > 0)
-        resolve(start(port + 1, tries - 1));
+      // EACCES on Windows: the port is in a block Windows has reserved (WinNAT takes 100 at a time,
+      // and the blocks move after restarts), so jump past the block instead of failing.
+      if ((e.code === "EADDRINUSE" || e.code === "EACCES") && tries > 0)
+        resolve(start(e.code === "EACCES" ? port + 100 : port + 1, tries - 1));
       else reject(e);
     });
     server.listen(port, HOST, () => resolve({ server, port }));
@@ -949,6 +951,8 @@ if (isMain) {
   for (const c of listCustom()) await loadCustom(c.file);
   const { port } = await start();
   const url = `http://localhost:${port}`;
+  // The launcher reads this to find a copy that had to move off the usual port.
+  store.write("server-port", { port });
   alerts.start();
   gtt.start();
   orderflow.start();
@@ -959,6 +963,10 @@ if (isMain) {
     `\n  Quant Terminal ${VERSION} is running\n\n  Open:  ${url}\n  Stop:  Ctrl+C\n  Data:  ${store.DATA_DIR}\n`,
   );
   if (proxyNote()) console.log(`  ${proxyNote()}\n`);
+  if (port !== START_PORT)
+    console.log(
+      `  Port ${START_PORT} was busy or reserved by Windows, so this copy uses ${port}. Zerodha and ICICI logins\n  come back to port ${START_PORT}, so they won't work until it's free (see "Port reserved by Windows" in the manual).\n`,
+    );
   if (HOST !== "127.0.0.1" && HOST !== "localhost")
     console.log(
       `  Also on your network: ${lanAddresses()
