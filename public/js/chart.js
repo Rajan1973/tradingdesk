@@ -392,10 +392,7 @@ export class ChartPane {
     this.main.attachPrimitive(this.earningsLayer);
     this.markers = LW.createSeriesMarkers(this.main, []);
     this.mainType = t;
-    if (
-      !PRICE_ONLY.includes(t) &&
-      this.app.settings.volume !== false
-    ) {
+    if (this.wantsVolume(t)) {
       this.volume = this.chart.addSeries(LW.HistogramSeries, {
         priceScaleId: "vol",
         priceFormat: { type: "volume" },
@@ -406,6 +403,11 @@ export class ChartPane {
         .priceScale("vol")
         .applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
     }
+  }
+
+  // The volume bars under the candles, unless Simple Volume (shown) has its own pane on this chart.
+  wantsVolume(type) {
+    return !PRICE_ONLY.includes(type) && this.app.settings.volume !== false && !this.cfg.indicators.some((x) => x.id === "simplevolume" && !x.hidden);
   }
 
   // ---------- time helpers (drawings, legend, markers all go through these) ----------
@@ -630,13 +632,7 @@ export class ChartPane {
     const prevRange = this.chart.timeScale().getVisibleLogicalRange();
     const atEnd =
       prevRange && this.shown.length && prevRange.to >= this.shown.length - 3;
-    if (
-      this.mainType !== this.cfg.type ||
-      !!this.volume !==
-        (!PRICE_ONLY.includes(this.cfg.type) &&
-          this.app.settings.volume !== false)
-    )
-      this.makeMainSeries();
+    if (this.mainType !== this.cfg.type || !!this.volume !== this.wantsVolume(this.cfg.type)) this.makeMainSeries();
     this.shown = this.visibleBars();
     this.times = this.shown.map((b) => this.toChart(b.time));
     const last = this.shown.at(-1)?.close || 1;
@@ -1150,6 +1146,8 @@ export class ChartPane {
 
   // ---------- indicators ----------
   addIndicator(id, params = {}) {
+    // Simple Volume replaces the plain Volume indicator on this chart.
+    if (id === "simplevolume") this.cfg.indicators = this.cfg.indicators.filter((x) => x.id !== "volume");
     const uid = newUid();
     this.cfg.indicators.push({ uid, id, params });
     this.render(false);
